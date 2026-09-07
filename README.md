@@ -256,6 +256,12 @@ evidence are archived in [`docs/evidence-summary.md`](docs/evidence-summary.md).
 - [`SECURITY.md`](SECURITY.md) — threat model
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contributor workflow
 
+---
+
+## Support
+
+If this project saved you some time, you can [buy me a coffee](https://buymeacoffee.com/iml1s).
+
 ## License and limitations
 
 Apache-2.0. This project is not affiliated with the host vendors. Do not copy `~/.grok/bundled/skills/**` into this tree.
