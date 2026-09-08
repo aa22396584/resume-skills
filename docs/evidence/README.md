@@ -12,3 +12,8 @@ ephemeral absolute paths and host state.
 These records prove only the scoped claims they name. They do not establish a
 vendor-curated directory listing, untested visual picker behavior, or live
 session restoration.
+
+Automated exact-version native evidence records across all enabled destinations
+and independent evaluation scopes are captured in
+[`native-activation-evidence.json`](./native-activation-evidence.json) conforming to
+[`native-activation-policy-v1.md`](./native-activation-policy-v1.md).

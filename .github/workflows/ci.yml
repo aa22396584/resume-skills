@@ -34,6 +34,9 @@ jobs:
       - name: Quality gates (docs + secrets)
         run: python scripts/self_verify.py --profile ci-quality
 
+      - name: Evidence profile check
+        run: python scripts/collect_native_evidence.py --check-only
+
   # OS × Python compatibility: interpreter-sensitive stages exactly once per cell.
   test:
     name: test (${{ matrix.os }} / py${{ matrix.python-version }})
@@ -87,7 +90,12 @@ jobs:
           PYTHONPATH: src
         run: |
           python -m compileall -q src scripts tests
-          python -m unittest tests.unit.test_platform_fs tests.unit.test_platform_paths tests.unit.test_install_windows_platform_gate tests.unit.test_windows_relative_mutations tests.unit.test_windows_parent_chain_reparse tests.unit.test_output_write tests.unit.test_self_verify_profiles tests.integration.test_windows_install_adversarial -q
+          python -m unittest tests.unit.test_platform_fs tests.unit.test_platform_paths tests.unit.test_install_windows_platform_gate tests.unit.test_windows_relative_mutations tests.unit.test_windows_parent_chain_reparse tests.unit.test_output_write tests.unit.test_self_verify_profiles tests.integration.test_windows_install_adversarial tests.unit.test_native_evidence -q
+
+      - name: Evidence profile check (Windows nt)
+        env:
+          PYTHONPATH: src
+        run: python scripts/collect_native_evidence.py --check-only
 
       - name: Product read-only surfaces (Windows nt)
         env:
