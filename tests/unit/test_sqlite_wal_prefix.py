@@ -164,8 +164,10 @@ class WalPrefixTests(unittest.TestCase):
                 writer.execute("INSERT INTO records VALUES (3, 'uncommitted')")
 
                 wal = Path(str(source) + "-wal")
-                wal_fd = os.open(wal, os.O_RDONLY | os.O_NOFOLLOW)
-                main_fd = os.open(private, os.O_RDWR | os.O_NOFOLLOW)
+                nofollow = getattr(os, "O_NOFOLLOW", 0)
+                binary = getattr(os, "O_BINARY", 0)
+                wal_fd = os.open(wal, os.O_RDONLY | nofollow | binary)
+                main_fd = os.open(private, os.O_RDWR | nofollow | binary)
                 try:
                     prefix = validate_wal_prefix(
                         wal_fd,

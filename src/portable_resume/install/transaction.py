@@ -1836,7 +1836,7 @@ def _open_support_control_file(
         if stat_mod.S_ISLNK(st.st_mode) or not stat_mod.S_ISREG(st.st_mode):
             raise DiagnosticError("E_INSTALL_CONFLICT")
     try:
-        fd = os.open(path, flags | getattr(os, "O_CLOEXEC", 0), mode)
+        fd = os.open(path, flags | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0), mode)
     except OSError as error:
         raise DiagnosticError("E_INSTALL_CONFLICT") from error
     try:
@@ -1905,7 +1905,7 @@ def _open_legacy_support_control_file(
         if stat_mod.S_ISLNK(st.st_mode) or not stat_mod.S_ISREG(st.st_mode):
             raise DiagnosticError("E_INSTALL_CONFLICT")
     try:
-        fd = os.open(path, flags | getattr(os, "O_CLOEXEC", 0), mode)
+        fd = os.open(path, flags | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0), mode)
     except OSError as error:
         raise DiagnosticError("E_INSTALL_CONFLICT") from error
     try:
@@ -2036,7 +2036,13 @@ def _atomic_write_support_file(root: str, name: str, data: bytes) -> None:
         raise DiagnosticError("E_INSTALL_CONFLICT")
     tmp_path = os.path.join(state, f".{name}.tmp-{secrets.token_hex(8)}")
     try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         fd = os.open(tmp_path, flags, 0o644)
         try:
             view = memoryview(payload)
@@ -3611,8 +3617,7 @@ def _execute_install_under_lock_windows(
             safe = _safe_rel_path(rel)
             staged_path = os.path.join(stage_dir, safe)
             backend.mkdirs_beneath(os.path.dirname(staged_path), root=root)
-            with open(staged_path, "wb") as f:
-                f.write(data)
+            backend.write_regular_beneath(staged_path, data, root=root)
             journal["paths"][safe] = {
                 "state": "staged",
                 "sha256": sha256_bytes(data),
@@ -3634,8 +3639,7 @@ def _execute_install_under_lock_windows(
                 payload_digest = sha256_bytes(body)
                 rollback_path = os.path.join(stage_dir, ".rollback", safe)
                 backend.mkdirs_beneath(os.path.dirname(rollback_path), root=root)
-                with open(rollback_path, "wb") as f:
-                    f.write(body)
+                backend.write_regular_beneath(rollback_path, body, root=root)
                 journal["paths"][safe]["existed"] = True
                 journal["paths"][safe]["rollback_backup"] = rollback_path
                 journal["paths"][safe]["original_sha256"] = payload_digest
@@ -3649,8 +3653,7 @@ def _execute_install_under_lock_windows(
                 body = f.read()
             backup_path = os.path.join(backup_root, safe)
             backend.mkdirs_beneath(os.path.dirname(backup_path), root=root)
-            with open(backup_path, "wb") as f:
-                f.write(body)
+            backend.write_regular_beneath(backup_path, body, root=root)
             journal["paths"][safe]["backup"] = backup_path
 
         journal["state"] = "committing"
@@ -3903,6 +3906,8 @@ def _restore_checkpoint_files_windows(
     from ..platform_fs import get_filesystem_backend
     backend = get_filesystem_backend()
     root = checkpoint.root
+    state_dir = control_state_dir(root)
+    backend.mkdirs_beneath(state_dir, root=root)
     for rel, meta in checkpoint.paths.items():
         if meta.get("transaction_lock"):
             continue
@@ -3910,8 +3915,54 @@ def _restore_checkpoint_files_windows(
         if meta.get("existed"):
             snapshot = meta.get("snapshot")
             if isinstance(snapshot, str) and os.path.isfile(snapshot) and not os.path.islink(snapshot):
-                backend.mkdirs_beneath(os.path.dirname(dest), root=root)
-                backend.replace_beneath(snapshot, dest, root=root)
+                allowed = set(meta.get("allowed_sha256") or ())
+                snap_sha = meta.get("sha256")
+                if isinstance(snap_sha, str):
+                    allowed.add(snap_sha)
+                if allowed and os.path.lexists(dest):
+                    identity = backend.inspect_object_identity(dest, root=root)
+                    if identity.object_type != "file":
+                        raise DiagnosticError("E_RECOVERY_REQUIRED")
+                    live_read = backend.read_regular_stable(dest, root=root)
+                    live_sha = sha256_bytes(live_read.data)
+                    if live_sha not in allowed:
+                        raise DiagnosticError("E_RECOVERY_REQUIRED")
+                stage_restore = os.path.join(
+                    state_dir,
+                    f".restore-{secrets.token_hex(8)}",
+                )
+                try:
+                    snap_flags = (
+                        os.O_RDONLY
+                        | getattr(os, "O_CLOEXEC", 0)
+                        | getattr(os, "O_NOFOLLOW", 0)
+                        | getattr(os, "O_BINARY", 0)
+                    )
+                    try:
+                        snap_fd = os.open(snapshot, snap_flags)
+                    except OSError:
+                        raise DiagnosticError("E_RECOVERY_REQUIRED")
+                    try:
+                        st_snap = os.fstat(snap_fd)
+                        if not stat_mod.S_ISREG(st_snap.st_mode):
+                            raise DiagnosticError("E_RECOVERY_REQUIRED")
+                        if bool(getattr(st_snap, "st_file_attributes", 0) & 0x0400):
+                            raise DiagnosticError("E_RECOVERY_REQUIRED")
+                        with os.fdopen(snap_fd, "rb", closefd=False) as sf:
+                            snap_data = sf.read()
+                    finally:
+                        os.close(snap_fd)
+                    if isinstance(snap_sha, str) and sha256_bytes(snap_data) != snap_sha:
+                        raise DiagnosticError("E_RECOVERY_REQUIRED")
+                    backend.write_regular_beneath(stage_restore, snap_data, root=root)
+                    backend.mkdirs_beneath(os.path.dirname(dest), root=root)
+                    backend.replace_beneath(stage_restore, dest, root=root)
+                finally:
+                    if os.path.lexists(stage_restore):
+                        try:
+                            backend.unlink_beneath(stage_restore, root=root)
+                        except DiagnosticError:
+                            pass
         else:
             if os.path.lexists(dest):
                 backend.unlink_beneath(dest, root=root)
@@ -3980,7 +4031,12 @@ def _unlink_support_control_file(root: str, name: str) -> None:
 
 def _copy_regular_nofollow(src: str, target: str) -> None:
     """Copy one regular file without following the source or target."""
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
     target_created = False
     try:
         infd = os.open(src, flags)
@@ -3995,7 +4051,11 @@ def _copy_regular_nofollow(src: str, target: str) -> None:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         outfd = os.open(
             target,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_BINARY", 0),
             stat_mod.S_IMODE(source_stat.st_mode),
         )
         target_created = True
@@ -4008,7 +4068,8 @@ def _copy_regular_nofollow(src: str, target: str) -> None:
                 while view:
                     written = os.write(outfd, view)
                     view = view[written:]
-            os.fchmod(outfd, stat_mod.S_IMODE(source_stat.st_mode))
+            if hasattr(os, "fchmod"):
+                os.fchmod(outfd, stat_mod.S_IMODE(source_stat.st_mode))
         finally:
             os.close(outfd)
     except Exception:
@@ -4088,6 +4149,7 @@ def capture_install_checkpoint(
                     | os.O_CREAT
                     | os.O_EXCL
                     | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_BINARY", 0)
                 )
                 sfd = os.open(snapshot, flags, mode)
                 try:
@@ -4095,7 +4157,8 @@ def capture_install_checkpoint(
                     while view:
                         written = os.write(sfd, view)
                         view = view[written:]
-                    os.fchmod(sfd, mode)
+                    if hasattr(os, "fchmod"):
+                        os.fchmod(sfd, mode)
                 finally:
                     os.close(sfd)
                 if sha256_bytes(body) != digest:
@@ -4635,7 +4698,12 @@ def _restore_regular_nofollow(
     if allowed_live_sha256 is not None and os.path.lexists(dest):
         if os.path.islink(dest) or not os.path.isfile(dest):
             raise DiagnosticError("E_RECOVERY_REQUIRED")
-        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         try:
             live_fd = os.open(dest, flags)
         except OSError as error:
@@ -4658,7 +4726,12 @@ def _restore_regular_nofollow(
         if allowed_live_sha256 is not None and os.path.lexists(dest):
             if os.path.islink(dest) or not os.path.isfile(dest):
                 raise DiagnosticError("E_RECOVERY_REQUIRED")
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            flags = (
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_BINARY", 0)
+            )
             try:
                 live_fd = os.open(dest, flags)
             except OSError as error:

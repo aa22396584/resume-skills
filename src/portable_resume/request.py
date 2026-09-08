@@ -180,6 +180,21 @@ def _read_regular_request_via_backend(path: str) -> bytes:
         raise DiagnosticError.invalid()
     _invoke_hook("after-read", path)
 
+    # Second content pass detects same-stat in-place mutation (mirrors POSIX path).
+    try:
+        second = backend.read_regular_stable(
+            abs_path,
+            root=parent,
+            max_bytes=DEFAULT_BOUNDS.request_bytes,
+            attempts=DEFAULT_BOUNDS.snapshot_attempts,
+        )
+    except DiagnosticError as error:
+        if error.code in {"E_UNSAFE_PATH", "E_LIMIT_EXCEEDED", "E_SOURCE_BUSY"}:
+            raise DiagnosticError.invalid() from error
+        raise
+    if second.data != data:
+        raise DiagnosticError.invalid()
+
     # Re-read path identity after content (same as fstat after second pass).
     try:
         mid = _fingerprint(os.lstat(abs_path))

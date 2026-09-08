@@ -13,6 +13,7 @@ from portable_resume.adapters.qwen import FORMAT_ID, QwenAdapter
 from portable_resume.bounds import Bounds, ReadBudget
 from portable_resume.diagnostics import DiagnosticError
 from portable_resume.model import Query
+from portable_resume.paths import same_cwd
 from tests.helpers.core import tree_snapshot
 
 
@@ -51,7 +52,7 @@ class QwenAdapterTests(unittest.TestCase):
         self.assertEqual((report.state, report.format_id), ("supported", FORMAT_ID))
         summaries = adapter.list(current, ReadBudget())
         self.assertEqual([item.session_id for item in summaries], ["qwen-one"])
-        self.assertEqual(summaries[0].cwd, CWD)
+        self.assertTrue(same_cwd(summaries[0].cwd, CWD))
         self.assertNotIn("ignored.runtime", summaries[0].source_path or "")
 
         session = adapter.show(resolved(summaries), current, ReadBudget())

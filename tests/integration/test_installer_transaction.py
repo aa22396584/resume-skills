@@ -79,7 +79,7 @@ class InstallerTransactionTests(unittest.TestCase):
         )
         for _host, alias in aliases:
             alias.parent.mkdir(parents=True, exist_ok=True)
-            os.symlink(shared, alias)
+            os.symlink(shared, alias, target_is_directory=True)
         # Deliberately put the legacy owner last: execution may reorder, results may not.
         return shared, [aliases[0], aliases[1], aliases[2], ("claude", str(shared))]
 
@@ -87,7 +87,7 @@ class InstallerTransactionTests(unittest.TestCase):
         shared = self.home / ".claude" / "skills"
         gemini = self.home / ".gemini" / "skills"
         gemini.parent.mkdir(parents=True)
-        os.symlink(shared, gemini)
+        os.symlink(shared, gemini, target_is_directory=True)
         execute_install(plan_install(host="claude", scope="global", root=str(shared)))
         execute_install(plan_install(host="gemini", scope="global", root=str(shared)))
         manifest_file = Path(manifest_path(str(shared)))
@@ -117,7 +117,7 @@ class InstallerTransactionTests(unittest.TestCase):
         shared = self.home / ".claude" / "skills"
         gemini = self.home / ".gemini" / "skills"
         gemini.parent.mkdir(parents=True)
-        os.symlink(shared, gemini)
+        os.symlink(shared, gemini, target_is_directory=True)
         execute_install(plan_install(host="claude", scope="global", root=str(shared)))
         execute_install(plan_install(host="gemini", scope="global", root=str(shared)))
 
@@ -233,18 +233,23 @@ class InstallerTransactionTests(unittest.TestCase):
         self.assertEqual([item["plan"]["host"] for item in preview], ["gemini", "claude"])
         self.assertEqual(load_manifest(str(shared)).bundle_version, "0.4.2")
 
-        original_write = transaction_module._atomic_write_support_file_under_fd
+        target_fn = (
+            "_atomic_write_support_file_under_fd"
+            if transaction_module._supports_descriptor_relative_commit()
+            else "_atomic_write_support_file"
+        )
+        original_write = getattr(transaction_module, target_fn)
         manifest_writes = 0
 
-        def count_manifest_write(root_fd, name, data, **kwargs):
+        def count_manifest_write(target_ref, name, data, **kwargs):
             nonlocal manifest_writes
             if name == transaction_module.MANIFEST_NAME:
                 manifest_writes += 1
-            return original_write(root_fd, name, data, **kwargs)
+            return original_write(target_ref, name, data, **kwargs)
 
         with mock.patch.object(
             transaction_module,
-            "_atomic_write_support_file_under_fd",
+            target_fn,
             side_effect=count_manifest_write,
         ):
             results = install_multi_targets(
@@ -302,18 +307,23 @@ class InstallerTransactionTests(unittest.TestCase):
 
         self.assertEqual(self._file_bytes(shared), before_tree)
         self.assertTrue(all(item["dry_run"] for item in preview))
-        original_write = transaction_module._atomic_write_support_file_under_fd
+        target_fn = (
+            "_atomic_write_support_file_under_fd"
+            if transaction_module._supports_descriptor_relative_commit()
+            else "_atomic_write_support_file"
+        )
+        original_write = getattr(transaction_module, target_fn)
         manifest_writes = 0
 
-        def count_manifest_write(root_fd, name, data, **kwargs):
+        def count_manifest_write(target_ref, name, data, **kwargs):
             nonlocal manifest_writes
             if name == transaction_module.MANIFEST_NAME:
                 manifest_writes += 1
-            return original_write(root_fd, name, data, **kwargs)
+            return original_write(target_ref, name, data, **kwargs)
 
         with mock.patch.object(
             transaction_module,
-            "_atomic_write_support_file_under_fd",
+            target_fn,
             side_effect=count_manifest_write,
         ):
             results = install_multi_targets(targets, scope="global")
@@ -787,12 +797,13 @@ class InstallerTransactionTests(unittest.TestCase):
                     verify_root(self.root)
                 self.assertEqual(caught.exception.code, "E_VERIFY_MISMATCH")
 
-        path.write_text(json.dumps(original), encoding="utf-8")
-        payload_path = Path(self.root) / skill_rel
-        payload_path.chmod(0o600)
-        with self.assertRaises(DiagnosticError) as caught:
-            verify_root(self.root)
-        self.assertEqual(caught.exception.code, "E_VERIFY_MISMATCH")
+        if os.name != "nt":
+            path.write_text(json.dumps(original), encoding="utf-8")
+            payload_path = Path(self.root) / skill_rel
+            payload_path.chmod(0o600)
+            with self.assertRaises(DiagnosticError) as caught:
+                verify_root(self.root)
+            self.assertEqual(caught.exception.code, "E_VERIFY_MISMATCH")
 
     def test_windows_verify_ignores_non_portable_physical_mode_bits(self) -> None:
         execute_install(plan_install(host="claude", scope="project", root=self.root))
@@ -919,6 +930,7 @@ class InstallerTransactionTests(unittest.TestCase):
             verify_root(self.root)
         self.assertEqual(caught.exception.code, "E_VERIFY_MISMATCH")
 
+    @unittest.skipUnless(transaction_module._supports_descriptor_relative_commit(), "dirfd commit path")
     def test_partial_owned_replacements_are_rolled_back(self) -> None:
         execute_install(plan_install(host="claude", scope="project", root=self.root))
         manifest_before = Path(manifest_path(self.root)).read_bytes()
@@ -957,6 +969,7 @@ class InstallerTransactionTests(unittest.TestCase):
         self.assertEqual(Path(manifest_path(self.root)).read_bytes(), manifest_before)
         self.assertFalse(Path(journal_path(self.root)).exists())
 
+    @unittest.skipUnless(transaction_module._supports_descriptor_relative_commit(), "dirfd commit path")
     def test_recover_restores_owned_file_after_interrupted_partial_commit(self) -> None:
         execute_install(plan_install(host="claude", scope="project", root=self.root))
         manifest_before = Path(manifest_path(self.root)).read_bytes()

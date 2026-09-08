@@ -771,30 +771,33 @@ def _show_session(
     decoded: list[Mapping[str, Any]] = []
     turn_bounds = replace(DEFAULT_BOUNDS, tool_output_chars=query.max_tool_chars)
     row_count = 0
-    for seq, event_json, _created in cursor:
-        row_count += 1
-        if row_count > transcript_limit:
-            raise DiagnosticError.limit_exceeded()
-        budget.consume_transcript_records()
-        if not isinstance(seq, int):
-            raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
-        if seq in seen_seq:
-            raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
-        seen_seq.add(seq)
-        if not isinstance(event_json, str):
-            raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
-        encoded = event_json.encode("utf-8")
-        if len(encoded) > min(budget.limits.record_bytes, DEFAULT_BOUNDS.record_bytes):
-            raise DiagnosticError.limit_exceeded()
-        budget.consume_bytes(len(encoded))
-        event = _decode_event(event_json)
-        if event["type"] in {"custom", "session"}:
-            continue
-        # Attach SQL sequence for firstKeptSeq retention (Codex P1).
-        annotated = dict(event)
-        annotated["seq"] = seq
-        # Keep branch_summary for ancestry only; turn emission filters it out.
-        decoded.append(annotated)
+    try:
+        for seq, event_json, _created in cursor:
+            row_count += 1
+            if row_count > transcript_limit:
+                raise DiagnosticError.limit_exceeded()
+            budget.consume_transcript_records()
+            if not isinstance(seq, int):
+                raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
+            if seq in seen_seq:
+                raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
+            seen_seq.add(seq)
+            if not isinstance(event_json, str):
+                raise DiagnosticError("E_CORRUPT_RECORD", source="openclaw", provider=FORMAT_ID)
+            encoded = event_json.encode("utf-8")
+            if len(encoded) > min(budget.limits.record_bytes, DEFAULT_BOUNDS.record_bytes):
+                raise DiagnosticError.limit_exceeded()
+            budget.consume_bytes(len(encoded))
+            event = _decode_event(event_json)
+            if event["type"] in {"custom", "session"}:
+                continue
+            # Attach SQL sequence for firstKeptSeq retention (Codex P1).
+            annotated = dict(event)
+            annotated["seq"] = seq
+            # Keep branch_summary for ancestry only; turn emission filters it out.
+            decoded.append(annotated)
+    finally:
+        cursor.close()
 
     for event in _active_branch_events(decoded):
         kind = event["type"]

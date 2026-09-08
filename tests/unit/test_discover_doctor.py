@@ -257,7 +257,9 @@ class DoctorReportTests(unittest.TestCase):
 
             return _Adapter()
 
-        with mock.patch("portable_resume.discover_doctor.os.name", "nt"):
+        with mock.patch("portable_resume.discover_doctor.os.name", "nt"), mock.patch(
+            "portable_resume.discover_doctor.sys.platform", "linux"
+        ):
             report = doctor_report(cwd=os.getcwd(), load_adapter=fake_load)
         self.assertIs(report["platform"]["windows_mutating_install"], False)
         policy = next(c for c in report["checks"] if c["id"] == "windows_install_policy")

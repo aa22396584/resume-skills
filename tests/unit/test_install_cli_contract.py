@@ -193,7 +193,7 @@ class InstallCliContractTests(unittest.TestCase):
             _root_for("claude", "project", str(self.project), str(self.home), str(explicit)),
             os.path.abspath(str(explicit)),
         )
-        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+        with mock.patch.dict(os.environ, {"HOME": str(self.home), "USERPROFILE": str(self.home)}):
             self.assertEqual(
                 _root_for("claude", "global", None, str(self.home), "~/custom-skills"),
                 os.path.abspath(str(self.home / "custom-skills")),

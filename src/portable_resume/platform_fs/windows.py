@@ -59,6 +59,7 @@ GENERIC_WRITE = 0x40000000
 FILE_SHARE_READ = 0x00000001
 FILE_SHARE_WRITE = 0x00000002
 FILE_SHARE_DELETE = 0x00000004
+CREATE_ALWAYS = 2
 OPEN_EXISTING = 3
 OPEN_ALWAYS = 4
 FILE_ATTRIBUTE_NORMAL = 0x00000080
@@ -68,6 +69,15 @@ LOCKFILE_FAIL_IMMEDIATELY = 0x00000001
 LOCKFILE_EXCLUSIVE_LOCK = 0x00000002
 # Whole-file exclusive lock range (Microsoft-documented pattern).
 _LOCK_MAX_DWORD = 0xFFFFFFFF
+SYNCHRONIZE = 0x00100000
+OBJ_CASE_INSENSITIVE = 0x00000040
+FILE_OPEN = 1
+FILE_OVERWRITE_IF = 5
+FILE_DIRECTORY_FILE = 0x00000001
+FILE_NON_DIRECTORY_FILE = 0x00000040
+FILE_OPEN_REPARSE_POINT_NT = 0x00200000
+FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020
+FILE_READ_ATTRIBUTES = 0x00000080
 
 try:
     import ctypes
@@ -100,6 +110,35 @@ try:
             ("Offset", wintypes.DWORD),
             ("OffsetHigh", wintypes.DWORD),
             ("hEvent", wintypes.HANDLE),
+        ]
+
+    class UNICODE_STRING(ctypes.Structure):
+        _fields_ = [
+            ("Length", wintypes.USHORT),
+            ("MaximumLength", wintypes.USHORT),
+            ("Buffer", wintypes.LPWSTR),
+        ]
+
+    class OBJECT_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [
+            ("Length", wintypes.ULONG),
+            ("RootDirectory", wintypes.HANDLE),
+            ("ObjectName", ctypes.POINTER(UNICODE_STRING)),
+            ("Attributes", wintypes.ULONG),
+            ("SecurityDescriptor", wintypes.LPVOID),
+            ("SecurityQualityOfService", wintypes.LPVOID),
+        ]
+
+    class IO_STATUS_BLOCK(ctypes.Structure):
+        class _U(ctypes.Union):
+            _fields_ = [
+                ("Status", wintypes.LONG),
+                ("Pointer", wintypes.LPVOID),
+            ]
+        _anonymous_ = ("_u",)
+        _fields_ = [
+            ("_u", _U),
+            ("Information", ctypes.c_size_t),
         ]
 
     _HAS_CTYPES = True
@@ -212,6 +251,39 @@ def _get_kernel32() -> ctypes.WinDLL | None:
     return kernel32
 
 
+_ntdll_configured: object | None = None
+
+
+def _get_ntdll() -> Any:
+    """Return ntdll with declared NT native prototypes."""
+    global _ntdll_configured
+    if not _HAS_CTYPES or os.name != "nt":
+        return None
+    if _ntdll_configured is not None:
+        return _ntdll_configured
+    try:
+        ntdll = ctypes.WinDLL("ntdll")
+    except Exception:
+        return None
+
+    ntdll.NtCreateFile.restype = wintypes.LONG
+    ntdll.NtCreateFile.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE),
+        wintypes.ULONG,
+        ctypes.POINTER(OBJECT_ATTRIBUTES),
+        ctypes.POINTER(IO_STATUS_BLOCK),
+        ctypes.POINTER(ctypes.c_int64),
+        wintypes.ULONG,
+        wintypes.ULONG,
+        wintypes.ULONG,
+        wintypes.ULONG,
+        wintypes.LPVOID,
+        wintypes.ULONG,
+    ]
+    _ntdll_configured = ntdll
+    return ntdll
+
+
 def _filetime_to_ns(high: int, low: int) -> int:
     ft = (high << 32) | low
     return (ft - 116444736000000000) * 100
@@ -320,6 +392,87 @@ def _check_reparse_components(
         canonical = canonicalize_cwd(original)
         if not is_within(canonical, base_root):
             raise DiagnosticError.unsafe_path()
+
+
+def _open_directory_handle_beneath(
+    directory: str | os.PathLike[str],
+    root: str | os.PathLike[str],
+) -> Any:
+    _validate_win32_path(directory, root)
+    walk_root, base_root, rel = _get_lexical_rel(directory, root)
+    kernel32 = _get_kernel32()
+    ntdll = _get_ntdll()
+    if kernel32 is None or ntdll is None:
+        raise DiagnosticError("E_INSTALL_UNSUPPORTED_PLATFORM")
+
+    h_curr = kernel32.CreateFileW(
+        base_root,
+        GENERIC_READ | SYNCHRONIZE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        None,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if _handle_is_invalid(h_curr):
+        raise DiagnosticError.unsafe_path()
+
+    info = BY_HANDLE_FILE_INFORMATION()
+    if not kernel32.GetFileInformationByHandle(h_curr, ctypes.byref(info)):
+        kernel32.CloseHandle(h_curr)
+        raise DiagnosticError.unsafe_path()
+    if not (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) or (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT):
+        kernel32.CloseHandle(h_curr)
+        raise DiagnosticError.unsafe_path()
+
+    if rel in ("", "."):
+        return h_curr
+
+    norm_rel = rel.replace("/", "\\") if os.name == "nt" else rel
+    parts = [p for p in norm_rel.split("\\") if p and p != "."]
+    for component in parts:
+        if component == os.pardir:
+            kernel32.CloseHandle(h_curr)
+            raise DiagnosticError.unsafe_path()
+        u_str = UNICODE_STRING()
+        u_str.Buffer = component
+        u_str.Length = len(component) * 2
+        u_str.MaximumLength = u_str.Length + 2
+
+        oa = OBJECT_ATTRIBUTES()
+        oa.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
+        oa.RootDirectory = h_curr
+        oa.ObjectName = ctypes.pointer(u_str)
+        oa.Attributes = OBJ_CASE_INSENSITIVE
+
+        iosb = IO_STATUS_BLOCK()
+        h_next = wintypes.HANDLE()
+        status = ntdll.NtCreateFile(
+            ctypes.byref(h_next),
+            GENERIC_READ | SYNCHRONIZE,
+            ctypes.byref(oa),
+            ctypes.byref(iosb),
+            None,
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_OPEN,
+            FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT_NT | FILE_SYNCHRONOUS_IO_NONALERT,
+            None,
+            0,
+        )
+        kernel32.CloseHandle(h_curr)
+        if status != 0 or _handle_is_invalid(h_next):
+            raise DiagnosticError.unsafe_path()
+        h_curr = h_next
+
+        if not kernel32.GetFileInformationByHandle(h_curr, ctypes.byref(info)):
+            kernel32.CloseHandle(h_curr)
+            raise DiagnosticError.unsafe_path()
+        if not (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) or (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT):
+            kernel32.CloseHandle(h_curr)
+            raise DiagnosticError.unsafe_path()
+
+    return h_curr
 
 
 class WindowsFilesystemBackend(FilesystemBackend):
@@ -583,6 +736,106 @@ class WindowsFilesystemBackend(FilesystemBackend):
             os.replace(src_abs, dst_abs)
         except OSError as error:
             raise DiagnosticError.unsafe_path() from error
+
+    def write_regular_beneath(
+        self,
+        path: str | os.PathLike[str],
+        data: bytes | bytearray | memoryview,
+        *,
+        root: str | os.PathLike[str],
+    ) -> None:
+        _validate_win32_path(path, root)
+        walk_root, base_root, rel = _get_lexical_rel(path, root)
+        _check_reparse_components(path, root, allow_nonexistent=True)
+
+        abs_path = canonicalize_cwd(path)
+        if not is_within(abs_path, base_root) or abs_path == base_root:
+            raise DiagnosticError.unsafe_path()
+
+        raw_path = normalize_unicode(os.path.abspath(os.fspath(path)))
+        parent = os.path.dirname(raw_path)
+        basename = os.path.basename(raw_path)
+        if not basename or basename in (".", ".."):
+            raise DiagnosticError.unsafe_path()
+
+        if canonicalize_cwd(parent) != base_root:
+            _check_reparse_components(parent, root, allow_nonexistent=False)
+
+        payload = bytes(data)
+        kernel32 = _get_kernel32()
+        ntdll = _get_ntdll()
+        if kernel32 is None or ntdll is None:
+            raise DiagnosticError("E_INSTALL_UNSUPPORTED_PLATFORM")
+
+        try:
+            import msvcrt
+        except ImportError as error:
+            raise DiagnosticError("E_INSTALL_UNSUPPORTED_PLATFORM") from error
+
+        h_parent = _open_directory_handle_beneath(parent, root)
+        try:
+            u_str = UNICODE_STRING()
+            u_str.Buffer = basename
+            u_str.Length = len(basename) * 2
+            u_str.MaximumLength = u_str.Length + 2
+
+            oa = OBJECT_ATTRIBUTES()
+            oa.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
+            oa.RootDirectory = h_parent
+            oa.ObjectName = ctypes.pointer(u_str)
+            oa.Attributes = OBJ_CASE_INSENSITIVE
+
+            iosb = IO_STATUS_BLOCK()
+            h_file = wintypes.HANDLE()
+            status = ntdll.NtCreateFile(
+                ctypes.byref(h_file),
+                GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                ctypes.byref(oa),
+                ctypes.byref(iosb),
+                None,
+                FILE_ATTRIBUTE_NORMAL,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_OVERWRITE_IF,
+                FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT_NT | FILE_SYNCHRONOUS_IO_NONALERT,
+                None,
+                0,
+            )
+            if status != 0 or _handle_is_invalid(h_file):
+                raise DiagnosticError.unsafe_path()
+
+            try:
+                info = BY_HANDLE_FILE_INFORMATION()
+                if not kernel32.GetFileInformationByHandle(h_file, ctypes.byref(info)):
+                    raise DiagnosticError.unsafe_path()
+                attrs = info.dwFileAttributes
+                if attrs & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY):
+                    raise DiagnosticError.unsafe_path()
+
+                fd = msvcrt.open_osfhandle(
+                    int(getattr(h_file, "value", h_file)),
+                    os.O_WRONLY | getattr(os, "O_BINARY", 0),
+                )
+            except Exception as error:
+                kernel32.CloseHandle(h_file)
+                if isinstance(error, DiagnosticError):
+                    raise
+                raise DiagnosticError.unsafe_path() from error
+
+            try:
+                view = memoryview(payload)
+                while view:
+                    written = os.write(fd, view)
+                    view = view[written:]
+                try:
+                    os.fsync(fd)
+                except OSError:
+                    pass
+            finally:
+                os.close(fd)
+        finally:
+            kernel32.CloseHandle(h_parent)
+
+        _check_reparse_components(path, root, allow_nonexistent=False)
 
     def sqlite_family_snapshot(
         self,

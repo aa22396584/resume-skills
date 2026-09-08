@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from typing import Any
@@ -348,7 +349,7 @@ class ClineAdapterTests(unittest.TestCase):
                 original_read = cline_mod.stable_read_bytes
 
                 def remove_manifest(path: str, **kwargs: Any) -> Any:
-                    if path.endswith(f"/{BASIC_ID}.json"):
+                    if os.path.basename(path) == f"{BASIC_ID}.json":
                         manifest_path.unlink()
                         raise DiagnosticError.unsafe_path()
                     return original_read(path, **kwargs)
@@ -387,7 +388,7 @@ class ClineAdapterTests(unittest.TestCase):
         original_read = cline_mod.stable_read_bytes
 
         def invariant_manifest(path: str, **kwargs: Any) -> Any:
-            if path.endswith(manifest_suffix):
+            if os.path.basename(path) == f"{BASIC_ID}.json":
                 raise DiagnosticError("E_INVARIANT")
             return original_read(path, **kwargs)
 
@@ -423,7 +424,7 @@ class ClineAdapterTests(unittest.TestCase):
         original_read = cline_mod.stable_read_bytes
 
         def unreadable_manifest(path: str, **kwargs: Any) -> Any:
-            if path.endswith(manifest_suffix):
+            if os.path.basename(path) == f"{BASIC_ID}.json":
                 raise PermissionError(path)
             return original_read(path, **kwargs)
 
@@ -460,7 +461,7 @@ class ClineAdapterTests(unittest.TestCase):
 
         for code in ("E_CORRUPT_RECORD", "E_UNSUPPORTED_FORMAT"):
             def optional_failure(path: str, **kwargs: Any) -> Any:
-                if path.endswith(manifest_suffix):
+                if os.path.basename(path) == f"{BASIC_ID}.json":
                     raise DiagnosticError(code)
                 return original_read(path, **kwargs)
 
@@ -525,7 +526,7 @@ class ClineAdapterTests(unittest.TestCase):
         original_read = cline_mod.stable_read_bytes
 
         def busy_manifest(path: str, **kwargs: Any) -> Any:
-            if path.endswith(f"/{BASIC_ID}.json"):
+            if os.path.basename(path) == f"{BASIC_ID}.json":
                 raise DiagnosticError.source_busy()
             return original_read(path, **kwargs)
 

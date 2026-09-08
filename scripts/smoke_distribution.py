@@ -9,7 +9,10 @@ import os
 import subprocess
 import sys
 import tempfile
-import venv
+try:
+    import venv
+except ImportError:
+    venv = None
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +182,8 @@ def smoke_artifact(
         environment["PIP_NO_INPUT"] = "1"
 
         venv_root = base / "venv"
+        if venv is None:
+            raise RuntimeError("venv module is required to smoke installed artifacts")
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_root)
         python = _venv_python(venv_root)
         installed = _run(

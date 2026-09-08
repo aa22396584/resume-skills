@@ -148,6 +148,16 @@ class FilesystemBackend(abc.ABC):
         """Safely replace target_path with source_path under root."""
 
     @abc.abstractmethod
+    def write_regular_beneath(
+        self,
+        path: str | os.PathLike[str],
+        data: bytes | bytearray | memoryview,
+        *,
+        root: str | os.PathLike[str],
+    ) -> None:
+        """Safely write regular file bytes beneath root without following symlinks."""
+
+    @abc.abstractmethod
     def sqlite_family_snapshot(
         self,
         database_path: str | os.PathLike[str],

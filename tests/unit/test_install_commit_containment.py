@@ -40,6 +40,7 @@ class InstallCommitContainmentTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
 
+    @unittest.skipUnless(_supports_descriptor_relative_commit(), "dirfd commit path")
     def test_parent_directory_symlink_swap_during_commit_fails_closed(self) -> None:
         outside = Path(self._tmpdir.name) / "outside-escape"
         outside.mkdir()
@@ -73,6 +74,7 @@ class InstallCommitContainmentTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertEqual(list(outside.iterdir()), [])
 
+    @unittest.skipUnless(_supports_descriptor_relative_commit(), "dirfd commit path")
     def test_staged_symlink_swap_during_commit_fails_closed(self) -> None:
         outside = Path(self._tmpdir.name) / "outside-escape"
         outside.mkdir()

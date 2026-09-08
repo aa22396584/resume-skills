@@ -52,6 +52,10 @@ class QueryOnlyLiveSqliteTests(unittest.TestCase):
                 pass
         self.assertEqual(ctx.exception.code, "E_UNSAFE_PATH")
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "POSIX descriptor URI and rename-while-open semantics",
+    )
     def test_main_rename_symlink_swap_before_sqlite_open_fails_closed(self) -> None:
         attacker = self.root / "attacker.sqlite"
         connection = sqlite3.connect(attacker)

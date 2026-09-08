@@ -191,8 +191,9 @@ class StableSnapshotTests(unittest.TestCase):
             private_dir = snapshot.directory
             private_path = snapshot.path
             self.assertEqual(Path(snapshot.path).read_bytes(), b"synthetic\n")
-            self.assertEqual(os.stat(snapshot.directory).st_mode & 0o777, 0o700)
-            self.assertEqual(os.stat(snapshot.path).st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(os.stat(snapshot.directory).st_mode & 0o777, 0o700)
+                self.assertEqual(os.stat(snapshot.path).st_mode & 0o777, 0o600)
             self.assertEqual(tree_snapshot(self.store), before)
             path.write_bytes(b"changed!!\n")
             self.assertEqual(Path(snapshot.path).read_bytes(), b"synthetic\n")
@@ -378,6 +379,10 @@ class StableSnapshotTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "E_UNSAFE_PATH")
         connect.assert_not_called()
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "POSIX atomic file replacement while open is unsupported on Windows",
+    )
     def test_live_sqlite_main_replacement_before_open_is_busy_without_connect(self) -> None:
         database = self.create_database()
         replacement = self.store / "replacement.db"
@@ -508,6 +513,13 @@ class StableSnapshotTests(unittest.TestCase):
                 raise RuntimeError("cancel")
         self.assertIsNotNone(private_dir)
         self.assertFalse(Path(private_dir).exists())
+
+    def test_sqlite_snapshot_close_propagates_cleanup_error(self) -> None:
+        database = self.create_database()
+        snapshot = snapshot_sqlite_family(database, root=self.store)
+        with mock.patch.object(snapshot._temporary, "cleanup", side_effect=OSError("Sharing violation")):
+            with self.assertRaises(OSError):
+                snapshot.close()
 
 
 if __name__ == "__main__":

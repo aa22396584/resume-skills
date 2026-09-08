@@ -89,6 +89,15 @@ class UnsupportedFilesystemBackend(FilesystemBackend):
     ) -> None:
         raise DiagnosticError("E_INSTALL_UNSUPPORTED_PLATFORM")
 
+    def write_regular_beneath(
+        self,
+        path: str | os.PathLike[str],
+        data: bytes | bytearray | memoryview,
+        *,
+        root: str | os.PathLike[str],
+    ) -> None:
+        raise DiagnosticError("E_INSTALL_UNSUPPORTED_PLATFORM")
+
     def sqlite_family_snapshot(
         self,
         database_path: str | os.PathLike[str],

@@ -157,7 +157,8 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(skill.is_file())
         runner = Path(root) / "resume-codex" / "scripts" / "run_reader.py"
         self.assertTrue(runner.is_file())
-        self.assertTrue(os.stat(runner).st_mode & stat.S_IXUSR)
+        if os.name != "nt":
+            self.assertTrue(os.stat(runner).st_mode & stat.S_IXUSR)
         # uninstall
         removed = uninstall_claim(host="claude", scope="project", root=root)
         self.assertTrue(removed["ok"])

@@ -97,7 +97,7 @@ class ControlStateSplitTests(unittest.TestCase):
         report = verify_root(self.root)
         self.assertTrue(report["ok"])
         self.assertEqual(report["control_layout"], "state-v1")
-        self.assertTrue(report["control_state_dir"].endswith(f"{SUPPORT_DIR}/{STATE_SUBDIR}"))
+        self.assertTrue(report["control_state_dir"].replace("\\", "/").endswith(f"{SUPPORT_DIR}/{STATE_SUBDIR}"))
 
     def test_migrate_v1_manifest_into_state(self) -> None:
         self._install()

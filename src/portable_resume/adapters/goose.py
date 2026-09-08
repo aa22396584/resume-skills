@@ -446,39 +446,42 @@ def _show_session(
     seen_message_ids: set[str] = set()
     turn_bounds = replace(DEFAULT_BOUNDS, tool_output_chars=query.max_tool_chars)
     count = 0
-    for message_id, role, content_json, _created in cursor:
-        count += 1
-        if count > budget.limits.transcript_records:
-            raise DiagnosticError.limit_exceeded()
-        if not isinstance(role, str) or not isinstance(content_json, str):
-            raise DiagnosticError("E_CORRUPT_RECORD", source="goose", provider=FORMAT_ID)
-        if isinstance(message_id, str) and message_id:
-            if message_id in seen_message_ids:
+    try:
+        for message_id, role, content_json, _created in cursor:
+            count += 1
+            if count > budget.limits.transcript_records:
+                raise DiagnosticError.limit_exceeded()
+            if not isinstance(role, str) or not isinstance(content_json, str):
                 raise DiagnosticError("E_CORRUPT_RECORD", source="goose", provider=FORMAT_ID)
-            seen_message_ids.add(message_id)
-        encoded = content_json.encode("utf-8")
-        if len(encoded) > budget.limits.record_bytes:
-            raise DiagnosticError.limit_exceeded()
-        # Charge the shared ReadBudget so reused/partial budgets fail closed (Codex P2).
-        budget.consume_transcript_records()
-        budget.consume_bytes(len(encoded))
-        mapped_role = role
-        if role in {"toolResult", "tool_result", "function"}:
-            mapped_role = "tool"
-        if mapped_role not in {"user", "assistant", "tool"}:
-            continue
-        text = _content_text(content_json)
-        if text is None:
-            continue
-        turn, turn_warnings = sanitize_turn_record(
-            {"role": mapped_role, "content": text},
-            ordinal=len(turns),
-            bounds=turn_bounds,
-        )
-        warnings.extend(turn_warnings)
-        if turn is not None:
-            budget.consume_turns()
-            turns.append(turn)
+            if isinstance(message_id, str) and message_id:
+                if message_id in seen_message_ids:
+                    raise DiagnosticError("E_CORRUPT_RECORD", source="goose", provider=FORMAT_ID)
+                seen_message_ids.add(message_id)
+            encoded = content_json.encode("utf-8")
+            if len(encoded) > budget.limits.record_bytes:
+                raise DiagnosticError.limit_exceeded()
+            # Charge the shared ReadBudget so reused/partial budgets fail closed (Codex P2).
+            budget.consume_transcript_records()
+            budget.consume_bytes(len(encoded))
+            mapped_role = role
+            if role in {"toolResult", "tool_result", "function"}:
+                mapped_role = "tool"
+            if mapped_role not in {"user", "assistant", "tool"}:
+                continue
+            text = _content_text(content_json)
+            if text is None:
+                continue
+            turn, turn_warnings = sanitize_turn_record(
+                {"role": mapped_role, "content": text},
+                ordinal=len(turns),
+                bounds=turn_bounds,
+            )
+            warnings.extend(turn_warnings)
+            if turn is not None:
+                budget.consume_turns()
+                turns.append(turn)
+    finally:
+        cursor.close()
 
     last_user = next((t.content for t in reversed(turns) if t.role == "user"), None)
     last_assistant = next((t.content for t in reversed(turns) if t.role == "assistant"), None)

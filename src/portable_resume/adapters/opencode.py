@@ -760,20 +760,23 @@ class OpenCodeAdapter:
                 )
                 rows = []
                 charged_messages: set[str] = set()
-                for row in cursor:
-                    if len(rows) >= row_cap:
-                        raise DiagnosticError.limit_exceeded()
-                    # Charge once per admitted row field as it streams in.
-                    message_key = str(row[0])
-                    message_data = row[2]
-                    part_data = row[5]
-                    if message_key not in charged_messages:
-                        charged_messages.add(message_key)
-                        _charge_sql_text_field(message_data, budget)
-                    if part_data is not None:
-                        _charge_sql_text_field(part_data, budget)
-                    budget.consume_transcript_records()
-                    rows.append(row)
+                try:
+                    for row in cursor:
+                        if len(rows) >= row_cap:
+                            raise DiagnosticError.limit_exceeded()
+                        # Charge once per admitted row field as it streams in.
+                        message_key = str(row[0])
+                        message_data = row[2]
+                        part_data = row[5]
+                        if message_key not in charged_messages:
+                            charged_messages.add(message_key)
+                            _charge_sql_text_field(message_data, budget)
+                        if part_data is not None:
+                            _charge_sql_text_field(part_data, budget)
+                        budget.consume_transcript_records()
+                        rows.append(row)
+                finally:
+                    cursor.close()
                 orphan_count = connection.execute(
                     'SELECT COUNT(*) FROM "part" AS p LEFT JOIN "message" AS m '
                     "ON m.id=p.message_id AND m.session_id=p.session_id "

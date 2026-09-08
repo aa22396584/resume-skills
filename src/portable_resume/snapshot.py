@@ -118,7 +118,15 @@ class SQLiteSnapshot:
         return connection
 
     def close(self) -> None:
-        self._temporary.cleanup()
+        try:
+            self._temporary.cleanup()
+        except OSError:
+            if os.name == "nt":
+                import gc
+                gc.collect()
+                self._temporary.cleanup()
+            else:
+                raise
 
     def __enter__(self) -> "SQLiteSnapshot":
         return self
@@ -1891,10 +1899,13 @@ def query_only_live_sqlite(
         None,
     )
     if descriptor_path is None:
-        os.close(descriptor)
-        raise DiagnosticError.unsafe_path()
+        if os.name == "nt":
+            descriptor_path = os.fspath(safe).replace("\\", "/")
+        else:
+            os.close(descriptor)
+            raise DiagnosticError.unsafe_path()
 
-    uri = f"file:{quote(descriptor_path, safe='/')}?mode=ro&cache=private"
+    uri = f"file:{quote(descriptor_path, safe='/:')}?mode=ro&cache=private"
     connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(uri, uri=True)

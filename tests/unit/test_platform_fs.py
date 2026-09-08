@@ -69,6 +69,10 @@ class PlatformFsContractTests(unittest.TestCase):
                     backend.inspect_object_identity(file_path, root=tmp_dir)
                 self.assertEqual(caught.exception.code, "E_INSTALL_UNSUPPORTED_PLATFORM")
 
+                with self.assertRaises(DiagnosticError) as caught:
+                    backend.write_regular_beneath(file_path, b"test", root=tmp_dir)
+                self.assertEqual(caught.exception.code, "E_INSTALL_UNSUPPORTED_PLATFORM")
+
     def test_backend_selection_anti_spoofing(self) -> None:
         """Environment variables must never alter backend selection or capabilities."""
         with mock.patch.dict(
@@ -393,6 +397,36 @@ class PlatformFsContractTests(unittest.TestCase):
                         pass
             self.assertEqual(caught.exception.code, "E_INSTALL_UNSUPPORTED_PLATFORM")
             self.assertEqual(fake.lock_calls, 0, "LockFileEx must not run without proven metadata")
+
+    def test_write_regular_beneath_lifecycle(self) -> None:
+        backend = get_filesystem_backend()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sub = os.path.join(tmp_dir, "nested", "dir")
+            backend.mkdirs_beneath(sub, root=tmp_dir)
+            target = os.path.join(sub, "file.txt")
+
+            # Initial write
+            backend.write_regular_beneath(target, b"hello world", root=tmp_dir)
+            self.assertTrue(os.path.isfile(target))
+            with open(target, "rb") as f:
+                self.assertEqual(f.read(), b"hello world")
+
+            # Overwrite
+            backend.write_regular_beneath(target, b"overwritten", root=tmp_dir)
+            with open(target, "rb") as f:
+                self.assertEqual(f.read(), b"overwritten")
+
+    def test_write_regular_beneath_security_rejects(self) -> None:
+        backend = get_filesystem_backend()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Target is root itself
+            with self.assertRaises(DiagnosticError):
+                backend.write_regular_beneath(tmp_dir, b"root", root=tmp_dir)
+
+            # Target outside root
+            outside = os.path.abspath(os.path.join(tmp_dir, "..", "escape.txt"))
+            with self.assertRaises(DiagnosticError):
+                backend.write_regular_beneath(outside, b"escape", root=tmp_dir)
 
 
 if __name__ == "__main__":

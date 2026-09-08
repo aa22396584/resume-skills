@@ -68,7 +68,8 @@ class ArtifactIdentityTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded, identity)
-            self.assertEqual(pin.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(pin.stat().st_mode & 0o777, 0o600)
 
     def test_artifact_build_rejects_legacy_v1_pin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -567,6 +568,7 @@ class ArtifactIdentityTests(unittest.TestCase):
                 "outside\n",
             )
 
+    @unittest.skipIf(os.name == "nt", "POSIX executable file modes required")
     def test_reproducible_sdist_normalizes_metadata_and_gzip_header(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

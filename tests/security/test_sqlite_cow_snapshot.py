@@ -26,6 +26,10 @@ from portable_resume.platform_fs.darwin_apfs import DarwinCloneUnavailable, is_a
 from portable_resume.snapshot import private_sqlite_connection_live_wal_cow
 
 
+@unittest.skipIf(
+    os.name == "nt",
+    "Darwin/APFS SQLite COW requires POSIX dir_fd and unlocking semantics",
+)
 class SQLiteCowSnapshotTests(unittest.TestCase):
     def test_scratch_nonempty_check_stops_after_first_unknown_entry(self) -> None:
         class HostileEntries:

@@ -14,6 +14,7 @@ from portable_resume.adapters.kimi import FORMAT_ID, LEGACY_FORMAT_ID, KimiAdapt
 from portable_resume.bounds import Bounds, ReadBudget
 from portable_resume.diagnostics import DiagnosticError
 from portable_resume.model import Query
+from portable_resume.paths import same_cwd
 from portable_resume.reader import run
 from tests.helpers.core import tree_snapshot
 from tests.helpers.fixture_manifest import validate_fixture_tree
@@ -72,7 +73,7 @@ class KimiAdapterTests(unittest.TestCase):
             self.assertEqual(adapter.probe(current).format_id, FORMAT_ID)
             summaries = adapter.list(current, ReadBudget())
             self.assertEqual([item.session_id for item in summaries], [CURRENT_ID])
-            self.assertEqual(summaries[0].cwd, CWD)
+            self.assertTrue(same_cwd(summaries[0].cwd, CWD))
             session = adapter.show(resolved(summaries, CURRENT_ID), current, ReadBudget())
             self.assertEqual([turn.role for turn in session.turns], ["user", "assistant"])
             self.assertEqual([turn.content for turn in session.turns], ["Current Kimi prompt", "Current Kimi answer"])
@@ -109,7 +110,7 @@ class KimiAdapterTests(unittest.TestCase):
                 stderr=stderr,
             )
             self.assertEqual(code, 0, stderr.getvalue())
-            self.assertEqual(json.loads(stdout.getvalue())["sessions"][0]["cwd"], CWD)
+            self.assertTrue(same_cwd(json.loads(stdout.getvalue())["sessions"][0]["cwd"], CWD))
 
     def test_legacy_metadata_context_and_wire_fallback(self) -> None:
         root = fixture_root("s-kim-02")
@@ -118,10 +119,10 @@ class KimiAdapterTests(unittest.TestCase):
         current = query(root, LEGACY_ID)
         summaries = adapter.list(current, ReadBudget())
         self.assertEqual(summaries[0].provider, LEGACY_FORMAT_ID)
-        self.assertEqual(summaries[0].cwd, CWD)
+        self.assertTrue(same_cwd(summaries[0].cwd, CWD))
         session = adapter.show(resolved(summaries, LEGACY_ID), current, ReadBudget())
         self.assertEqual([turn.content for turn in session.turns], ["Legacy Kimi prompt", "Legacy Kimi answer"])
-        self.assertEqual(session.cwd, CWD)
+        self.assertTrue(same_cwd(session.cwd, CWD))
         self.assertEqual(tree_snapshot(root), before)
 
         with tempfile.TemporaryDirectory() as temporary:

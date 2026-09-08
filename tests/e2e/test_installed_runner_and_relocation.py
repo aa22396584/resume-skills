@@ -36,8 +36,12 @@ class InstalledRunnerTests(unittest.TestCase):
             execute_install(plan_install(host="claude", scope="project", root=root))
             verify_root(root)
 
-            fixture_root = REPO / "tests" / "fixtures" / "claude" / "s-cla-01-ordered-parent-chain" / "root"
-            self.assertTrue(fixture_root.is_dir(), "missing claude fixture root")
+            fixture_source = REPO / "tests" / "fixtures" / "claude" / "s-cla-01-ordered-parent-chain" / "root"
+            self.assertTrue(fixture_source.is_dir(), "missing claude fixture root")
+            fixture_root = Path(temporary) / "fixture_root"
+            shutil.copytree(fixture_source, fixture_root)
+            for entry in fixture_root.rglob("*.jsonl"):
+                os.utime(entry, None)
 
             request_path = Path(temporary) / "request.json"
             # Align request cwd with synthetic fixture sessions (/workspace/project).

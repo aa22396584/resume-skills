@@ -496,35 +496,38 @@ def _show_session(
     seen_ids: set[str] = set()
     turn_bounds = replace(DEFAULT_BOUNDS, tool_output_chars=query.max_tool_chars)
     count = 0
-    for message_id, role, parts, _created in cursor:
-        count += 1
-        if count > budget.limits.transcript_records:
-            raise DiagnosticError.limit_exceeded()
-        if not isinstance(role, str) or not isinstance(parts, str):
-            raise DiagnosticError("E_CORRUPT_RECORD", source="crush", provider=FORMAT_ID)
-        if isinstance(message_id, str) and message_id:
-            if message_id in seen_ids:
+    try:
+        for message_id, role, parts, _created in cursor:
+            count += 1
+            if count > budget.limits.transcript_records:
+                raise DiagnosticError.limit_exceeded()
+            if not isinstance(role, str) or not isinstance(parts, str):
                 raise DiagnosticError("E_CORRUPT_RECORD", source="crush", provider=FORMAT_ID)
-            seen_ids.add(message_id)
-        encoded = parts.encode("utf-8")
-        if len(encoded) > budget.limits.record_bytes:
-            raise DiagnosticError.limit_exceeded()
-        budget.consume_transcript_records()
-        budget.consume_bytes(len(encoded))
-        if role not in _PUBLIC_ROLES:
-            continue
-        text = _parts_text(parts)
-        if text is None:
-            continue
-        turn, turn_warnings = sanitize_turn_record(
-            {"role": role, "content": text},
-            ordinal=len(turns),
-            bounds=turn_bounds,
-        )
-        warnings.extend(turn_warnings)
-        if turn is not None:
-            budget.consume_turns()
-            turns.append(turn)
+            if isinstance(message_id, str) and message_id:
+                if message_id in seen_ids:
+                    raise DiagnosticError("E_CORRUPT_RECORD", source="crush", provider=FORMAT_ID)
+                seen_ids.add(message_id)
+            encoded = parts.encode("utf-8")
+            if len(encoded) > budget.limits.record_bytes:
+                raise DiagnosticError.limit_exceeded()
+            budget.consume_transcript_records()
+            budget.consume_bytes(len(encoded))
+            if role not in _PUBLIC_ROLES:
+                continue
+            text = _parts_text(parts)
+            if text is None:
+                continue
+            turn, turn_warnings = sanitize_turn_record(
+                {"role": role, "content": text},
+                ordinal=len(turns),
+                bounds=turn_bounds,
+            )
+            warnings.extend(turn_warnings)
+            if turn is not None:
+                budget.consume_turns()
+                turns.append(turn)
+    finally:
+        cursor.close()
 
     last_user = next((t.content for t in reversed(turns) if t.role == "user"), None)
     last_assistant = next((t.content for t in reversed(turns) if t.role == "assistant"), None)

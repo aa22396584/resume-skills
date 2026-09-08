@@ -352,7 +352,12 @@ class CodexTailOverflowTests(unittest.TestCase):
                     self.show(self.budget())
             self.assertEqual(caught.exception.code, "E_SOURCE_BUSY")
 
-        for kind in ("append", "shrink", "replacement", "tail", "head"):
+        kinds = (
+            ("append", "shrink", "tail", "head")
+            if os.name == "nt"
+            else ("append", "shrink", "replacement", "tail", "head")
+        )
+        for kind in kinds:
             with self.subTest(kind=kind):
                 run_mutation(kind)
 

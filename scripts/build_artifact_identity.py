@@ -335,7 +335,10 @@ def write_staged_identity(
                 pass
     epoch = _source_date_epoch()
     if epoch is not None:
-        os.utime(destination, (epoch, epoch), follow_symlinks=False)
+        if os.utime in os.supports_follow_symlinks:
+            os.utime(destination, (epoch, epoch), follow_symlinks=False)
+        else:
+            os.utime(destination, (epoch, epoch))
     return data
 
 

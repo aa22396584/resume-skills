@@ -25,6 +25,7 @@ from portable_resume.bounds import Bounds, DEFAULT_BOUNDS, ReadBudget
 from portable_resume.diagnostics import DiagnosticError
 from portable_resume.handoff import render_handoff
 from portable_resume.model import Envelope, Query
+from portable_resume.paths import same_cwd
 from portable_resume.platform_fs.darwin_apfs import is_apfs_fd
 from portable_resume.select import AmbiguousSelection, select_session
 from tests.helpers.core import tree_snapshot
@@ -1542,7 +1543,7 @@ class GrokAdapterTests(unittest.TestCase):
         current = query("grok", root, "grok-one")
         self.assertEqual(adapter.probe(current).format_id, GROK_FORMAT)
         values = adapter.list(current, ReadBudget())
-        self.assertEqual(values[0].cwd, CWD)
+        self.assertTrue(same_cwd(values[0].cwd, CWD))
         self.assertEqual(values[0].branch, "main")
         session = adapter.show(resolve(values, "grok-one"), current, ReadBudget())
         self.assertEqual([turn.content for turn in session.turns], ["Grok prompt", "Grok answer"])
@@ -1615,7 +1616,7 @@ class GrokAdapterTests(unittest.TestCase):
         ):
             values = adapter.list(query("grok", root, "grok-one"), ReadBudget())
         self.assertEqual([item.session_id for item in values], ["grok-one"])
-        self.assertEqual(values[0].cwd, CWD)
+        self.assertTrue(same_cwd(values[0].cwd, CWD))
 
     def test_hash_cwd_marker_is_stable_read_and_exact_path_selects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1640,7 +1641,7 @@ class GrokAdapterTests(unittest.TestCase):
             adapter = GrokAdapter(root=str(root))
             current = query("grok", root, str(updates))
             values = adapter.list(current, ReadBudget())
-            self.assertEqual(values[0].cwd, CWD)
+            self.assertTrue(same_cwd(values[0].cwd, CWD))
             selected = select_session(values, ref=str(updates), cwd=CWD, approved_roots=(str(root),))
             self.assertEqual(selected.selected.session_id, "hash-one")
 

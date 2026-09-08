@@ -455,12 +455,33 @@ def _pin_family(
     provider: str | None,
     deadline: _Deadline,
 ) -> _PinnedFamily:
-    # Import lazily so snapshot.py can expose this module without an import cycle.
-    from .snapshot import _open_directory_beneath
+    from .snapshot import _dirfd_io_supported, _open_directory_beneath
 
     safe, base = require_regular_no_symlinks(database, root)
     parent = os.path.dirname(safe)
     basename = os.path.basename(safe)
+    if not _dirfd_io_supported():
+        for suffix in ("-journal", "-wal", "-shm"):
+            member = os.path.join(parent, basename + suffix)
+            if os.path.lexists(member):
+                if not os.path.isfile(member) or os.path.islink(member):
+                    raise DiagnosticError.unsafe_path()
+        journal_path = os.path.join(parent, basename + "-journal")
+        if os.path.lexists(journal_path):
+            raise DiagnosticError(
+                "E_SQLITE_HOT_JOURNAL",
+                provider=provider,
+                attempts=0,
+                family=(basename + "-journal",),
+            )
+        wal_path = os.path.join(parent, basename + "-wal")
+        wal_family = (basename + "-wal", basename + "-shm") if os.path.lexists(wal_path) else ()
+        raise DiagnosticError(
+            "E_SQLITE_LIVE_WAL",
+            provider=provider,
+            attempts=0,
+            family=wal_family,
+        )
     parent_fd = _open_directory_beneath(parent, base)
     main_fd: int | None = None
     wal_fd: int | None = None
@@ -727,7 +748,11 @@ def _copy_prefix(
     while offset < prefix.length:
         deadline.check()
         try:
-            block = os.pread(family.wal_fd, min(64 * 1024, prefix.length - offset), offset)
+            if hasattr(os, "pread"):
+                block = os.pread(family.wal_fd, min(64 * 1024, prefix.length - offset), offset)
+            else:
+                os.lseek(family.wal_fd, offset, os.SEEK_SET)
+                block = os.read(family.wal_fd, min(64 * 1024, prefix.length - offset))
         except OSError as error:
             raise DiagnosticError.source_busy(
                 family=family.family_names, provider=deadline.provider

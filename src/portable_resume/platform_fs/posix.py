@@ -177,6 +177,48 @@ class PosixFilesystemBackend(FilesystemBackend):
             os.close(src_fd)
             os.close(dst_fd)
 
+    def write_regular_beneath(
+        self,
+        path: str | os.PathLike[str],
+        data: bytes | bytearray | memoryview,
+        *,
+        root: str | os.PathLike[str],
+    ) -> None:
+        canonical_path = require_within(path, root)
+        base_canon = canonical_root(root)
+        if canonical_path == base_canon:
+            raise DiagnosticError.unsafe_path()
+        parent = os.path.dirname(canonical_path)
+        basename = os.path.basename(canonical_path)
+        try:
+            parent_fd = _open_directory_beneath(parent, base_canon)
+        except Exception as error:
+            raise DiagnosticError.unsafe_path() from error
+        try:
+            flags = (
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_TRUNC
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0)
+            )
+            fd = os.open(basename, flags, 0o644, dir_fd=parent_fd)
+            try:
+                view = memoryview(bytes(data))
+                while view:
+                    written = os.write(fd, view)
+                    view = view[written:]
+                try:
+                    os.fsync(fd)
+                except OSError:
+                    pass
+            finally:
+                os.close(fd)
+        except OSError as error:
+            raise DiagnosticError.unsafe_path() from error
+        finally:
+            os.close(parent_fd)
+
     def sqlite_family_snapshot(
         self,
         database_path: str | os.PathLike[str],

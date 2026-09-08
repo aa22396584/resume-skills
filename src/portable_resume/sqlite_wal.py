@@ -52,7 +52,11 @@ def _pread_exact(descriptor: int, amount: int, offset: int) -> bytes:
     output = bytearray()
     try:
         while len(output) < amount:
-            block = os.pread(descriptor, amount - len(output), offset + len(output))
+            if hasattr(os, "pread"):
+                block = os.pread(descriptor, amount - len(output), offset + len(output))
+            else:
+                os.lseek(descriptor, offset + len(output), os.SEEK_SET)
+                block = os.read(descriptor, amount - len(output))
             if not block:
                 raise _busy()
             output.extend(block)
@@ -278,7 +282,11 @@ def materialize_wal_prefix(
         destination_offset = (page_number - 1) * prefix.page_size
         while page:
             try:
-                written = os.pwrite(main_descriptor, page, destination_offset)
+                if hasattr(os, "pwrite"):
+                    written = os.pwrite(main_descriptor, page, destination_offset)
+                else:
+                    os.lseek(main_descriptor, destination_offset, os.SEEK_SET)
+                    written = os.write(main_descriptor, page)
             except OSError as error:
                 raise _busy() from error
             if written <= 0:

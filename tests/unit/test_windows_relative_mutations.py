@@ -142,6 +142,24 @@ class WindowsRelativeMutationsTests(unittest.TestCase):
             self.assertEqual(secret.read_bytes(), b"topsecret")
             self.assertTrue(src.exists())
 
+    def test_reparse_junction_escape_write_regular_fails_closed(self) -> None:
+        if not _HAS_WINAPI:
+            self.skipTest("_winapi not available")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            ext_dir = tmp / "external"
+            ext_dir.mkdir()
+            root = tmp / "root"
+            root.mkdir()
+            junc = root / "junc"
+            _winapi.CreateJunction(str(ext_dir), str(junc))
+
+            escape_target = junc / "escape.txt"
+            with self.assertRaises(DiagnosticError) as ctx:
+                self.backend.write_regular_beneath(escape_target, b"escaped!", root=root)
+            self.assertEqual(ctx.exception.code, "E_UNSAFE_PATH")
+            self.assertFalse((ext_dir / "escape.txt").exists())
+
     def test_rejection_of_parent_escapes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
