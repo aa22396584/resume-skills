@@ -22,7 +22,7 @@ This repository ships **17** enabled source Skills to **18** destination hosts (
 | Host | Profile | Project root | Global root |
 |---|---|---|---|
 | Antigravity / agy | `antigravity-v1` | `<workspace>/.agents/skills/<name>/SKILL.md` | `~/.gemini/config/skills/<name>/SKILL.md` |
-| Claude Code | `claude-v1` | `<project>/.claude/skills/<name>/SKILL.md` | `~/.claude/skills/<name>/SKILL.md` |
+| Claude Code | `claude-v1` | `<project>/.claude/skills/<name>/SKILL.md` | `$CLAUDE_CONFIG_DIR/skills/<name>/SKILL.md (default ~/.claude/skills)` |
 | Cline | `cline-v1` | `<project>/.cline/skills/<name>/SKILL.md` | `~/.cline/skills/<name>/SKILL.md` |
 | Codex CLI / IDE | `codex-v1` | `<project>/.agents/skills/<name>/SKILL.md (CWD → repo root)` | `~/.agents/skills/<name>/SKILL.md` |
 | Crush | `crush-v1` | `<project>/.crush/skills/<name>/SKILL.md` | `~/.config/crush/skills/<name>/SKILL.md` |
@@ -37,7 +37,7 @@ This repository ships **17** enabled source Skills to **18** destination hosts (
 | OpenClaw | `openclaw-v1` | `<workspace>/skills/<name>/SKILL.md` | `~/.openclaw/skills/<name>/SKILL.md` |
 | OpenCode | `opencode-v1` | `<project>/.opencode/skills/<name>/SKILL.md` | `~/.config/opencode/skills/<name>/SKILL.md` |
 | OpenHands | `openhands-v1` | `<project>/.agents/skills/<name>/SKILL.md` | `~/.openhands/skills/<name>/SKILL.md` |
-| Pi agent | `pi-v1` | `<project>/.pi/skills/<name>/SKILL.md` | `~/.pi/agent/skills/<name>/SKILL.md` |
+| Pi agent | `pi-v1` | `<project>/.pi/skills/<name>/SKILL.md` | `$PI_CODING_AGENT_DIR/skills/<name>/SKILL.md (default ~/.pi/agent/skills)` |
 | Qwen Code | `qwen-v1` | `<project>/.qwen/skills/<name>/SKILL.md` | `~/.qwen/skills/<name>/SKILL.md` |
 <!-- generated:host-support-table:end (run scripts/render_docs.py --write) -->
 

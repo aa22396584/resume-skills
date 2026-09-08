@@ -313,11 +313,122 @@ class HostsCatalogTests(unittest.TestCase):
             home = Path(tmp) / "home"
             home.mkdir()
             report = hosts_report(project_dir=str(Path(tmp) / "p"), home_dir=str(home))
-            kimi = next(h for h in report["hosts"] if h["host"] == "kimi")
-            defaults = kimi["installer_defaults"]
-            self.assertEqual(defaults["global_root_source"], "home")
-            self.assertEqual(defaults["global_home_env"], "KIMI_CODE_HOME")
-            self.assertEqual(defaults["project_root_source"], "project")
+            by_host = {h["host"]: h for h in report["hosts"]}
+            self.assertEqual(by_host["kimi"]["installer_defaults"]["global_home_env"], "KIMI_CODE_HOME")
+            self.assertEqual(by_host["claude"]["installer_defaults"]["global_home_env"], "CLAUDE_CONFIG_DIR")
+            self.assertEqual(by_host["pi"]["installer_defaults"]["global_home_env"], "PI_CODING_AGENT_DIR")
+
+    def test_claude_global_honors_claude_config_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            claude_home = Path(tmp) / "claude-custom"
+            home.mkdir()
+            claude_home.mkdir()
+            env = {"CLAUDE_CONFIG_DIR": str(claude_home)}
+            resolved = resolve_skill_root_info(
+                host="claude",
+                scope="global",
+                project_dir=None,
+                home_dir=str(home),
+                environ=env,
+                isolation=False,
+            )
+            self.assertEqual(
+                resolved.path,
+                os.path.realpath(os.path.join(str(claude_home), "skills")),
+            )
+            self.assertEqual(resolved.root_source, "env:CLAUDE_CONFIG_DIR")
+            self.assertEqual(resolved.profile_id, "claude-v1")
+
+    def test_isolation_home_ignores_claude_config_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            claude_home = Path(tmp) / "claude-custom"
+            home.mkdir()
+            claude_home.mkdir()
+            resolved = resolve_skill_root_info(
+                host="claude",
+                scope="global",
+                project_dir=None,
+                home_dir=str(home),
+                environ={"CLAUDE_CONFIG_DIR": str(claude_home)},
+            )
+            self.assertTrue(
+                resolved.path.endswith(os.path.join("home", ".claude", "skills"))
+            )
+            self.assertEqual(resolved.root_source, "home")
+
+    def test_claude_env_home_rejects_relative_and_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            for bad in ("", "  ", "relative/path", "has\x00nul"):
+                with self.subTest(bad=repr(bad)):
+                    with self.assertRaises(ValueError):
+                        resolve_skill_root(
+                            host="claude",
+                            scope="global",
+                            project_dir=None,
+                            home_dir=str(home),
+                            environ={"CLAUDE_CONFIG_DIR": bad},
+                            isolation=False,
+                        )
+
+    def test_pi_global_honors_pi_coding_agent_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            pi_home = Path(tmp) / "pi-custom"
+            home.mkdir()
+            pi_home.mkdir()
+            env = {"PI_CODING_AGENT_DIR": str(pi_home)}
+            resolved = resolve_skill_root_info(
+                host="pi",
+                scope="global",
+                project_dir=None,
+                home_dir=str(home),
+                environ=env,
+                isolation=False,
+            )
+            self.assertEqual(
+                resolved.path,
+                os.path.realpath(os.path.join(str(pi_home), "skills")),
+            )
+            self.assertEqual(resolved.root_source, "env:PI_CODING_AGENT_DIR")
+            self.assertEqual(resolved.profile_id, "pi-v1")
+
+    def test_isolation_home_ignores_pi_coding_agent_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            pi_home = Path(tmp) / "pi-custom"
+            home.mkdir()
+            pi_home.mkdir()
+            resolved = resolve_skill_root_info(
+                host="pi",
+                scope="global",
+                project_dir=None,
+                home_dir=str(home),
+                environ={"PI_CODING_AGENT_DIR": str(pi_home)},
+            )
+            self.assertTrue(
+                resolved.path.endswith(os.path.join("home", ".pi", "agent", "skills"))
+            )
+            self.assertEqual(resolved.root_source, "home")
+
+    def test_pi_env_home_rejects_relative_and_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            for bad in ("", "  ", "relative/path", "has\x00nul"):
+                with self.subTest(bad=repr(bad)):
+                    with self.assertRaises(ValueError):
+                        resolve_skill_root(
+                            host="pi",
+                            scope="global",
+                            project_dir=None,
+                            home_dir=str(home),
+                            environ={"PI_CODING_AGENT_DIR": bad},
+                            isolation=False,
+                        )
 
 
 if __name__ == "__main__":

@@ -474,6 +474,47 @@ class OwnedSkillMarkdownTests(unittest.TestCase):
             )
             self.assertIn(f'_BOUND_SOURCE = "{source}"', runner)
 
+    def test_documented_relative_policy_path_resolves_in_materialized_layouts(self) -> None:
+        """Issue #285: SKILL.md points to ../.portable-resume/resources/handoff-policy.md relative to package root."""
+        from portable_resume.install.catalog import HOST_KEYS
+
+        for host in HOST_KEYS:
+            plan = materialize_plan(host)
+            for source in SOURCE_KEYS:
+                skill_md_path = f"resume-{source}/SKILL.md"
+                self.assertIn(skill_md_path, plan)
+                text = plan[skill_md_path].decode("utf-8")
+                self.assertIn("../.portable-resume/resources/handoff-policy.md", text)
+
+                pkg_dir = f"resume-{source}"
+                resolved_rel = os.path.normpath(
+                    os.path.join(pkg_dir, "../.portable-resume/resources/handoff-policy.md")
+                ).replace("\\", "/")
+                self.assertEqual(resolved_rel, ".portable-resume/resources/handoff-policy.md")
+                self.assertIn(resolved_rel, plan)
+
+                # Negative test: the old path without ../ resolves to a nonexistent file in the plan
+                buggy_rel = os.path.normpath(
+                    os.path.join(pkg_dir, ".portable-resume/resources/handoff-policy.md")
+                ).replace("\\", "/")
+                self.assertNotIn(buggy_rel, plan)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan = materialize_plan("claude")
+            for rel_path, content in plan.items():
+                target = tmp_path / rel_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+
+            for source in SOURCE_KEYS:
+                pkg_dir = tmp_path / f"resume-{source}"
+                policy_file = (pkg_dir / "../.portable-resume/resources/handoff-policy.md").resolve()
+                self.assertTrue(policy_file.is_file())
+                # Negative test
+                buggy_file = (pkg_dir / ".portable-resume/resources/handoff-policy.md").resolve()
+                self.assertFalse(buggy_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,7 +45,8 @@ path of `scripts/run_reader.py` as one token — do not invent shell variables
 unless the host already exports the loaded skill directory.
 
 The wrapper hard-binds `source=${source_key}` and loads the installer-owned
-stdlib runtime under the skill root's `.portable-resume/runtime/`.
+stdlib runtime under the shared installation root (`../.portable-resume/runtime/`
+relative to this package).
 
 ## Request lanes
 
@@ -137,10 +138,11 @@ needed to continue.
 The co-located policy file (always installed with this skill) is:
 
 ```text
-.portable-resume/resources/handoff-policy.md
+../.portable-resume/resources/handoff-policy.md
 ```
 
-(relative to the owned skill package root). Follow it and the checklist that
+(relative to the owned skill package root, or `.portable-resume/resources/handoff-policy.md`
+relative to the shared installation root). Follow it and the checklist that
 appears inside each handoff document.
 
 ## When the reader fails

@@ -73,12 +73,14 @@ HOST_PROFILES: dict[str, HostProfile] = {
             "https://code.claude.com/docs/en/plugin-marketplaces",
         ),
         project_layout="<project>/.claude/skills/<name>/SKILL.md",
-        global_layout="~/.claude/skills/<name>/SKILL.md",
+        global_layout="$CLAUDE_CONFIG_DIR/skills/<name>/SKILL.md (default ~/.claude/skills)",
         alternate_project_roots=(),
-        alternate_global_roots=(),
+        alternate_global_roots=(
+            "$CLAUDE_CONFIG_DIR/skills (when CLAUDE_CONFIG_DIR is set)",
+        ),
         install_methods=(
             "This installer (recommended): install-resume-skills install --host claude --scope project|global",
-            "Manual: copy each resume-*/ folder into .claude/skills/ or ~/.claude/skills/",
+            "Manual: copy each resume-*/ folder into .claude/skills/ or $CLAUDE_CONFIG_DIR/skills/ (default ~/.claude/skills/)",
             "Also: nested monorepo .claude/skills/ under packages (Claude discovers on demand)",
             "Plugin package: claude plugin install portable-resume@<marketplace> --scope user|project|local",
             "Marketplace setup: claude plugin marketplace add <owner/repo>, then /reload-plugins after updates",
@@ -102,11 +104,15 @@ HOST_PROFILES: dict[str, HostProfile] = {
         caveats=(
             "Cowork/cloud sessions do not read local ~/.claude/skills; use account-enabled or repo skills.",
             "Visual picker interaction and public marketplace publication are separate evidence claims.",
+            "Global installs honor CLAUDE_CONFIG_DIR when set (absolute path).",
         ),
         evidence_notes=(
             "Official Claude Code skills docs: personal + project roots, /skill-name, "
-            "$ARGUMENTS prompt substitution only (2026-07-20)."
+            "$ARGUMENTS prompt substitution only (2026-07-20). Destination root policy: "
+            "CLAUDE_CONFIG_DIR (#280, profile claude-v1)."
         ),
+        global_home_env="CLAUDE_CONFIG_DIR",
+        global_env_rel="skills",
     ),
     "codex": HostProfile(
         key="codex",
@@ -473,12 +479,15 @@ HOST_PROFILES: dict[str, HostProfile] = {
             "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md",
         ),
         project_layout="<project>/.pi/skills/<name>/SKILL.md",
-        global_layout="~/.pi/agent/skills/<name>/SKILL.md",
+        global_layout="$PI_CODING_AGENT_DIR/skills/<name>/SKILL.md (default ~/.pi/agent/skills)",
         alternate_project_roots=(".agents/skills",),
-        alternate_global_roots=("~/.agents/skills",),
+        alternate_global_roots=(
+            "$PI_CODING_AGENT_DIR/skills (when PI_CODING_AGENT_DIR is set)",
+            "~/.agents/skills",
+        ),
         install_methods=(
             "This installer: install-resume-skills install --host pi --scope project|global",
-            "Manual: copy each resume-*/ folder into .pi/skills/ or ~/.pi/agent/skills/",
+            "Manual: copy each resume-*/ folder into .pi/skills/ or $PI_CODING_AGENT_DIR/skills/ (default ~/.pi/agent/skills/)",
         ),
         activation_help=(
             "Invoke `/skill:resume-<source>` (Pi progressive disclosure). "
@@ -498,12 +507,17 @@ HOST_PROFILES: dict[str, HostProfile] = {
             "Pi has no built-in permission system; recovered text is inert/untrusted and must not be executed.",
             "Alternate .agents/skills roots are compatibility-only; this installer defaults to .pi paths.",
             "Visual picker / native CLI activation evidence is a separate not-run claim until PR D.",
+            "Global installs honor PI_CODING_AGENT_DIR when set (absolute path).",
+            "Project skill discovery requires project trust in Pi; discovery can be disabled via --no-skills or configuration.",
         ),
         evidence_notes=(
             "Pi Agent Skills docs: project .pi/skills and global ~/.pi/agent/skills "
-            "(checked 2026-07-26). Installed-runner smoke is filesystem packaging only."
+            "(checked 2026-07-26). Destination root policy: PI_CODING_AGENT_DIR (#287, profile pi-v1). "
+            "Installed-runner smoke is filesystem packaging only."
         ),
         evidence_level="verified-filesystem",
+        global_home_env="PI_CODING_AGENT_DIR",
+        global_env_rel="skills",
     ),
     "openclaw": HostProfile(
         key="openclaw",
@@ -1036,7 +1050,7 @@ def resolve_skill_root_info(
     if scope == "project":
         if not project_dir:
             raise ValueError("project scope requires --project")
-        path = os.path.join(os.path.realpath(project_dir), profile.project_rel)
+        path = os.path.normpath(os.path.join(os.path.realpath(project_dir), profile.project_rel))
         return SkillRootResolution(
             path=path,
             root_source="project",
@@ -1048,13 +1062,13 @@ def resolve_skill_root_info(
                 env[profile.global_home_env],
                 env_name=profile.global_home_env,
             )
-            path = os.path.join(base, profile.global_env_rel)
+            path = os.path.normpath(os.path.join(base, profile.global_env_rel))
             return SkillRootResolution(
                 path=path,
                 root_source=f"env:{profile.global_home_env}",
                 profile_id=profile.profile_id,
             )
-        path = os.path.join(os.path.realpath(home_dir), profile.global_rel)
+        path = os.path.normpath(os.path.join(os.path.realpath(home_dir), profile.global_rel))
         return SkillRootResolution(
             path=path,
             root_source="home",

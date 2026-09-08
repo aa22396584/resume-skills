@@ -456,7 +456,7 @@ def write(root: Path = REPO) -> None:
     for relative, names in REGION_FILES.items():
         path = root / relative
         rendered = _render_file(root, relative, names)
-        path.write_text(rendered, encoding="utf-8")
+        path.write_text(rendered, encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str] | None = None) -> int:
