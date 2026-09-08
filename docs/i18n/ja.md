@@ -2,7 +2,7 @@
 <!-- portable-resume-counts: sources=17 destinations=18 -->
 # Portable Resume — 日本語クイックスタート
 
-**現在の公開版：** [`0.4.1`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1)
+**現在の公開版：** [`0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3)
 
 Portable Resume は、Claude、Codex、Cursor、OpenCode、Antigravity、Grok、Qwen、Kimi の限定されたローカル文脈を**新しい**コーディングエージェントのセッションへ移行します。実行中プロセスやセッションの復元ではありません。リーダーはオフラインかつ Python 標準ライブラリのみで動作し、元の CLI を起動せず、復元テキストを不活性・未信頼として扱います。
 

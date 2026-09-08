@@ -137,5 +137,118 @@ class DocumentationI18nTests(unittest.TestCase):
         self.assertFalse((REPO / "docs" / "network-integrations.md").exists())
 
 
+    def test_repository_metadata_file_valid_and_offline(self) -> None:
+        meta_path = REPO / "docs" / "metadata" / "repository-metadata.json"
+        self.assertTrue(meta_path.is_file())
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["schema_version"], "portable-resume/repo-metadata-v1")
+        self.assertIn("offline", data["description"].lower())
+        self.assertIn("fresh session", data["description"].lower())
+        self.assertIn("not live", data["description"].lower())
+        self.assertNotIn("81", data["description"])
+        self.assertNotIn("9x9", data["description"].lower())
+        self.assertNotIn("9×9", data["description"])
+        self.assertTrue(data["homepage"].startswith("https://github.com/ImL1s/resume-skills"))
+        self.assertTrue(len(data["topics"]) > 0)
+        for t in data["topics"]:
+            self.assertRegex(t, r"^[a-z0-9-]+$")
+
+    def test_repository_metadata_rejects_stale_matrix_or_missing_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copy2(REPO / "README.md", root / "README.md")
+            shutil.copy2(REPO / "CHANGELOG.md", root / "CHANGELOG.md")
+            shutil.copytree(REPO / "docs", root / "docs")
+            meta_path = root / "docs" / "metadata" / "repository-metadata.json"
+
+            # Stale matrix claim
+            meta_path.write_text(
+                json.dumps({
+                    "schema_version": "portable-resume/repo-metadata-v1",
+                    "description": "Offline 9x9/81 matrix migration. Fresh sessions, not live.",
+                    "homepage": "https://github.com/ImL1s/resume-skills",
+                    "topics": ["cli"],
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.object(check_docs, "REPO", root):
+                report = check_docs.check()
+            self.assertTrue(
+                any("stale claim" in f for f in report["failures"]),
+                f"Expected stale claim failure, got: {report['failures']}",
+            )
+
+            # Missing boundaries
+            meta_path.write_text(
+                json.dumps({
+                    "schema_version": "portable-resume/repo-metadata-v1",
+                    "description": "A tool for coding agents.",
+                    "homepage": "https://github.com/ImL1s/resume-skills",
+                    "topics": ["cli"],
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.object(check_docs, "REPO", root):
+                report = check_docs.check()
+            self.assertTrue(
+                any("missing boundary phrase" in f for f in report["failures"]),
+                f"Expected missing boundary phrase failure, got: {report['failures']}",
+            )
+
+    def test_docs_check_rejects_stale_current_release_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copy2(REPO / "README.md", root / "README.md")
+            shutil.copy2(REPO / "CHANGELOG.md", root / "CHANGELOG.md")
+            shutil.copytree(REPO / "docs", root / "docs")
+            zh_path = root / "docs" / "i18n" / "zh-TW.md"
+            zh_text = zh_path.read_text(encoding="utf-8").replace(
+                "releases/tag/v0.4.3", "releases/tag/v0.4.1"
+            )
+            zh_path.write_text(zh_text, encoding="utf-8")
+            with mock.patch.object(check_docs, "REPO", root):
+                report = check_docs.check()
+            self.assertTrue(
+                any("docs/i18n/zh-TW.md: must link to current published release" in f for f in report["failures"]),
+                f"Expected stale release link failure, got: {report['failures']}",
+            )
+
+            # Test index README.md stale link
+            zh_path.write_text(
+                zh_text.replace("releases/tag/v0.4.1", "releases/tag/v0.4.3"),
+                encoding="utf-8",
+            )
+            idx_path = root / "docs" / "i18n" / "README.md"
+            idx_text = idx_path.read_text(encoding="utf-8").replace(
+                "releases/tag/v0.4.3", "releases/tag/v0.4.1"
+            )
+            idx_path.write_text(idx_text, encoding="utf-8")
+            with mock.patch.object(check_docs, "REPO", root):
+                report = check_docs.check()
+            self.assertTrue(
+                any("docs/i18n/README.md: must link to current published release" in f for f in report["failures"]),
+                f"Expected stale index release link failure, got: {report['failures']}",
+            )
+
+    def test_docs_check_rejects_stale_windows_unimplemented_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copy2(REPO / "README.md", root / "README.md")
+            shutil.copy2(REPO / "CHANGELOG.md", root / "CHANGELOG.md")
+            shutil.copytree(REPO / "docs", root / "docs")
+            policy_path = root / "docs" / "evidence" / "native-activation-policy-v1.md"
+            policy_path.write_text(
+                policy_path.read_text(encoding="utf-8")
+                + "\nA full Windows implementation is not shipped; until #125 lands.",
+                encoding="utf-8",
+            )
+            with mock.patch.object(check_docs, "REPO", root):
+                report = check_docs.check()
+            self.assertTrue(
+                any("active policy must not claim Windows mutating install is unimplemented" in f for f in report["failures"]),
+                f"Expected Windows policy failure, got: {report['failures']}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

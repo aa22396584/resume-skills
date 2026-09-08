@@ -8,13 +8,20 @@ Adapters are clean-room compatibility readers built from public documentation/so
 | Codex | `codex-state-sqlite-v1`, `codex-rollout-jsonl-v1`, optional zstd | public Codex code/docs + fixtures | supported (fixture/parser) | bounded live support; missing `zstd` is partial; invalid rollback state fails closed |
 | Cursor | CLI/Desktop fixture and live families | official docs/public stores + fixtures | supported (fixture/parser) | bounded live support; Desktop full bubble graph is not claimed |
 | OpenCode | SQLite, file-store, export families | official docs/public code + fixtures | supported (fixture/parser) | bounded live support; unknown schemas fail closed |
-| Antigravity | `antigravity-transcript-jsonl-v1` | official docs + fixtures | supported (fixture/parser) | bounded live support; index is a hint and fallback scan is bounded |
+| Antigravity | `antigravity-transcript-jsonl-v1`, CLI history/messages fallback (#248) | official docs + fixtures | supported (fixture/parser) | bounded live support; empty transcript falls back to CLI history/message shards; conversations SQLite deferred |
 | Grok Build | `grok-updates-jsonl-v1` | Apache-2.0 public tree + fixtures | supported (fixture/parser) | bounded live support; installed bundled Skills are excluded as implementation sources |
 | Qwen Code | `qwen-chat-jsonl-v1` | Qwen Code public tree at `713a083aea24ccb7b80db3e11abf2155b854a78c` + fixtures | supported (fixture/parser) | bounded live support; thought/tool/file/binary payloads are not replayed |
 | Kimi Code / legacy Kimi CLI | `kimi-code-wire-jsonl-v1`, `kimi-legacy-context-jsonl-v1` | Kimi Code `a2401cc1ed26e5758c081e657bcff6a75cb061bb`; legacy Kimi CLI `4a550effdfcb29a25a5d325bf935296cc50cd417`; fixtures | supported (fixture/parser) | bounded live support; tool execution is never replayed |
 | Pi | `pi-session-jsonl-v3`, `pi-session-jsonl-v2` | Pi public session-format docs + synthetic fixtures | supported (fixture/parser) | v3 primary; v2 read-only compat; destination filesystem install supported; native UI activation not-run |
 | OpenClaw | `openclaw-agent-sqlite-v1` | OpenClaw public schema/session docs + synthetic fixtures | supported (fixture/parser) | per-agent SQLite under `agents/<id>/agent/openclaw-agent.sqlite`; destination filesystem install supported; native UI activation not-run |
 | goose | `goose-sessions-sqlite-v15` | aaif-goose `CURRENT_SCHEMA_VERSION=15` + synthetic fixtures | supported (fixture/parser) | SQLite authority only; default list prefers `user` sessions; legacy JSONL out of scope; dest filesystem install supported; native UI not-run |
+| Crush | `crush-session-sqlite-v1` | charmbracelet/crush migration 7 + synthetic fixtures | supported (fixture/parser) | per-project `crush.db`; root sessions only; destination filesystem install supported; native UI not-run |
+| Cline | `cline-messages-json-v1`, `cline-ui-state-v1` | Cline public session docs + synthetic fixtures | supported (fixture/parser) | session index SQLite + `<id>.messages.json` authority; destination filesystem install supported; native UI not-run |
+| OpenHands | `openhands-event-json-v1` | OpenHands CLI LocalFileStore event JSON + synthetic fixtures | supported (fixture/parser) | ordered event-*.json files; cloud/GUI/ACP out of scope; destination filesystem install supported; native UI not-run |
+| Hermes | `hermes-state-sqlite-v1` | Hermes state.db schema 23 + synthetic fixtures | supported (fixture/parser) | WAL SQLite state.db; root sessions only; destination filesystem install supported; native UI not-run |
+| GitHub Copilot CLI | `copilot-cli-events-jsonl-v1` | Copilot session-state events.jsonl + synthetic fixtures | supported (fixture/parser) | local events.jsonl authority; session-store.db is search index only; destination filesystem install supported; native UI not-run |
+| Gemini CLI | `gemini-cli-session-jsonl-v1` | Gemini CLI session JSONL + synthetic fixtures | supported (fixture/parser) | distinct from Antigravity; cwd projectHash filter; destination filesystem install supported; native UI not-run |
+| Kilo CLI (research only) | `kilo-v7.4.17-research` | Kilo CLI v7.4.17 source review | destination-only (source NO-GO) | research only; not enabled as source; destination install supported under `.kilocode/skills` and `~/.config/kilo/skills` |
 
 ## Provenance anchors
 

@@ -13,8 +13,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+if str(SRC) in sys.path:
+    sys.path.remove(str(SRC))
+sys.path.insert(0, str(SRC))
 
 from portable_resume.install.catalog import host_catalog_snapshot  # noqa: E402
 from portable_resume.diagnostics import (  # noqa: E402

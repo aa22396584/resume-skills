@@ -2,7 +2,7 @@
 <!-- portable-resume-counts: sources=17 destinations=18 -->
 # Portable Resume — English quick start
 
-**Current published release:** [`0.4.1`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1)
+**Current published release:** [`0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3)
 
 Portable Resume moves bounded local context from Claude, Codex, Cursor, OpenCode, Antigravity, Grok, Qwen, or Kimi into a **fresh** coding-agent session. It is not live-session restore. Readers are offline, stdlib-only, never invoke a source CLI, and label recovered text as inert and untrusted.
 

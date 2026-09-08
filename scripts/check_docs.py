@@ -11,8 +11,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+if str(SRC) in sys.path:
+    sys.path.remove(str(SRC))
+sys.path.insert(0, str(SRC))
+if str(REPO) not in sys.path:
+    sys.path.insert(1, str(REPO))
 
 from portable_resume import __version__  # noqa: E402
 from portable_resume.diagnostics import ERROR_EXIT_CODES, WARNING_CODES  # noqa: E402
@@ -23,7 +26,7 @@ from portable_resume.registry import (  # noqa: E402
 )
 try:  # Direct script execution puts scripts/ rather than the repo root on sys.path.
     from scripts import render_docs  # type: ignore[no-redef]  # noqa: E402
-except ModuleNotFoundError:
+except (ImportError, ModuleNotFoundError):
     import render_docs  # type: ignore[no-redef]  # noqa: E402
 
 LOCALES = {
@@ -233,12 +236,252 @@ def _check_status_current_matrix(failures: list[str]) -> None:
             )
 
 
+def _check_repository_metadata(failures: list[str]) -> None:
+    path = REPO / "docs" / "metadata" / "repository-metadata.json"
+    if not path.is_file():
+        failures.append("docs/metadata/repository-metadata.json: missing")
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        failures.append(f"docs/metadata/repository-metadata.json: invalid JSON: {exc}")
+        return
+
+    if data.get("schema_version") != "portable-resume/repo-metadata-v1":
+        failures.append(
+            "docs/metadata/repository-metadata.json: expected schema_version 'portable-resume/repo-metadata-v1'"
+        )
+
+    description = data.get("description", "")
+    if not isinstance(description, str) or not description.strip():
+        failures.append(
+            "docs/metadata/repository-metadata.json: description must be a non-empty string"
+        )
+    else:
+        stale_patterns = (
+            r"\b9\s*[x×]\s*9\b",
+            r"\b81\b",
+            r"\b9\s+sources\b",
+            r"\b9\s+destinations\b",
+            r"\b81\s+cells\b",
+        )
+        for pat in stale_patterns:
+            if re.search(pat, description, re.IGNORECASE):
+                failures.append(
+                    f"docs/metadata/repository-metadata.json: description contains stale claim: {pat}"
+                )
+        desc_lower = description.lower()
+        for boundary in ("offline", "fresh session", "not live"):
+            if boundary not in desc_lower:
+                failures.append(
+                    f"docs/metadata/repository-metadata.json: description missing boundary phrase {boundary!r}"
+                )
+        if "kilo" in desc_lower and "source" in desc_lower:
+            failures.append(
+                "docs/metadata/repository-metadata.json: description must not claim Kilo as an enabled source"
+            )
+
+    homepage = data.get("homepage", "")
+    if not isinstance(homepage, str) or not homepage.startswith(
+        "https://github.com/ImL1s/resume-skills"
+    ):
+        failures.append(
+            "docs/metadata/repository-metadata.json: homepage must point to repository"
+        )
+
+    topics = data.get("topics")
+    if (
+        not isinstance(topics, list)
+        or not topics
+        or not all(isinstance(t, str) and t.strip() for t in topics)
+    ):
+        failures.append(
+            "docs/metadata/repository-metadata.json: topics must be a non-empty list of strings"
+        )
+    else:
+        for topic in topics:
+            if not re.match(r"^[a-z0-9-]+$", topic):
+                failures.append(
+                    f"docs/metadata/repository-metadata.json: topic must be kebab-case: {topic!r}"
+                )
+
+
+def _check_current_release_prose(failures: list[str], root_readme: str) -> None:
+    latest_release_path = REPO / "src" / "portable_resume" / "resources" / "latest-release.json"
+    published_ver = None
+    if latest_release_path.is_file():
+        try:
+            rel_data = json.loads(latest_release_path.read_text(encoding="utf-8"))
+            published_ver = rel_data.get("version")
+        except Exception:
+            pass
+
+    match = re.search(
+        r"\*\*Current release:\*\*\s+\[`([^`]+)`\]\(https://github\.com/[^/]+/[^/]+/releases/tag/v([^)]+)\)",
+        root_readme,
+    )
+    if not match:
+        failures.append("README.md: missing Current release link marker")
+        return
+    current_ver, tag_ver = match.group(1), match.group(2)
+    if current_ver != tag_ver:
+        failures.append(
+            f"README.md: current release link text {current_ver} does not match tag v{tag_ver}"
+        )
+    if published_ver and current_ver != published_ver:
+        failures.append(
+            f"README.md: current release link version {current_ver} does not match published version {published_ver} from latest-release.json"
+        )
+
+    target_ver = published_ver or current_ver
+    expected_tag_url = f"https://github.com/ImL1s/resume-skills/releases/tag/v{target_ver}"
+    index_path = REPO / "docs" / "i18n" / "README.md"
+    if index_path.is_file():
+        text = index_path.read_text(encoding="utf-8")
+        if expected_tag_url not in text:
+            failures.append(
+                f"docs/i18n/README.md: must link to current published release v{target_ver}"
+            )
+    for locale in LOCALES:
+        loc_path = REPO / "docs" / "i18n" / f"{locale}.md"
+        if not loc_path.is_file():
+            continue
+        text = loc_path.read_text(encoding="utf-8")
+        if expected_tag_url not in text:
+            failures.append(
+                f"docs/i18n/{locale}.md: must link to current published release v{target_ver}"
+            )
+
+
+def _check_source_formats_summary(failures: list[str]) -> None:
+    path = REPO / "docs" / "source-formats.md"
+    if not path.is_file():
+        failures.append("docs/source-formats.md: missing")
+        return
+    text = path.read_text(encoding="utf-8")
+    source_name_markers = {
+        "claude": "Claude",
+        "codex": "Codex",
+        "cursor": "Cursor",
+        "opencode": "OpenCode",
+        "antigravity": "Antigravity",
+        "grok": "Grok",
+        "qwen": "Qwen",
+        "kimi": "Kimi",
+        "pi": "Pi",
+        "openclaw": "OpenClaw",
+        "goose": "goose",
+        "crush": "Crush",
+        "cline": "Cline",
+        "openhands": "OpenHands",
+        "hermes": "Hermes",
+        "github-copilot": "GitHub Copilot",
+        "gemini": "Gemini",
+    }
+    for src in enabled_source_keys():
+        name = source_name_markers.get(src, src)
+        row_match = re.search(rf"\|\s*{re.escape(name)}\b", text)
+        if not row_match:
+            failures.append(
+                f"docs/source-formats.md: summary table missing enabled source {src!r}"
+            )
+
+    lowered = text.lower()
+    if (
+        "kilo" in lowered
+        and "destination-only" not in lowered
+        and "research" not in lowered
+    ):
+        failures.append(
+            "docs/source-formats.md: Kilo must be marked research/destination-only"
+        )
+
+
+def _check_native_activation_policy(failures: list[str]) -> None:
+    path = REPO / "docs" / "evidence" / "native-activation-policy-v1.md"
+    if not path.is_file():
+        failures.append("docs/evidence/native-activation-policy-v1.md: missing")
+        return
+    text = path.read_text(encoding="utf-8").lower()
+    if "is not shipped" in text or "until #125 lands" in text:
+        failures.append(
+            "docs/evidence/native-activation-policy-v1.md: active policy must not claim Windows mutating install is unimplemented"
+        )
+
+
+def check_live_metadata() -> list[str]:
+    """Optional maintainer check comparing live GitHub About to tracked metadata."""
+    metadata_path = REPO / "docs" / "metadata" / "repository-metadata.json"
+    if not metadata_path.is_file():
+        return ["docs/metadata/repository-metadata.json: missing"]
+    try:
+        tracked = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"docs/metadata/repository-metadata.json: invalid JSON: {exc}"]
+
+    import shutil
+    import subprocess
+
+    if not shutil.which("gh"):
+        print("INFO: 'gh' CLI not found; skipping live repository check", file=sys.stderr)
+        return []
+
+    res = subprocess.run(
+        ["gh", "repo", "view", "--json", "description,homepageUrl,repositoryTopics"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        print(
+            f"INFO: 'gh repo view' failed ({res.stderr.strip()}); skipping live check",
+            file=sys.stderr,
+        )
+        return []
+
+    try:
+        live = json.loads(res.stdout)
+    except Exception as exc:
+        return [f"live repo metadata: failed to parse JSON: {exc}"]
+
+    failures: list[str] = []
+    tracked_desc = tracked.get("description", "").strip()
+    live_desc = live.get("description", "").strip()
+    if tracked_desc != live_desc:
+        failures.append(
+            f"live description mismatch:\n  tracked: {tracked_desc}\n  live:    {live_desc}"
+        )
+
+    tracked_home = tracked.get("homepage", "").strip().rstrip("/")
+    live_home = (live.get("homepageUrl") or "").strip().rstrip("/")
+    if tracked_home != live_home:
+        failures.append(
+            f"live homepage mismatch:\n  tracked: {tracked_home}\n  live:    {live_home}"
+        )
+
+    tracked_topics = set(tracked.get("topics") or [])
+    live_topics = {t["name"] for t in (live.get("repositoryTopics") or [])}
+    if tracked_topics != live_topics:
+        missing = sorted(tracked_topics - live_topics)
+        unexpected = sorted(live_topics - tracked_topics)
+        failures.append(
+            f"live topics mismatch:\n  missing from live:   {missing}\n  unexpected on live: {unexpected}"
+        )
+
+    return failures
+
+
 def check() -> dict[str, object]:
     failures: list[str] = []
     root_readme = (REPO / "README.md").read_text(encoding="utf-8")
     _check_root_docs(failures, root_readme)
     _check_diagnostics_reference(failures)
     _check_status_current_matrix(failures)
+    _check_repository_metadata(failures)
+    _check_current_release_prose(failures, root_readme)
+    _check_source_formats_summary(failures)
+    _check_native_activation_policy(failures)
     if "docs/i18n/README.md" not in root_readme:
         failures.append("README.md: missing multilingual documentation link")
 
@@ -263,48 +506,49 @@ def check() -> dict[str, object]:
             continue
         text = path.read_text(encoding="utf-8")
         checked.append(locale)
+        rel = path.relative_to(REPO).as_posix()
         marker = f"<!-- portable-resume-i18n: {locale} v{__version__} -->"
         if marker not in text:
-            failures.append(f"{path.relative_to(REPO)}: missing current version marker")
+            failures.append(f"{rel}: missing current version marker")
         count_markers = _COUNTS_MARKER.findall(text)
         expected_counts = (str(source_count), str(destination_count))
         if count_markers != [expected_counts]:
             failures.append(
-                f"{path.relative_to(REPO)}: counts marker must be "
+                f"{rel}: counts marker must be "
                 f"sources={source_count} destinations={destination_count}"
             )
         current_facts = _current_registry_facts(text)
         if current_facts is None:
             failures.append(
-                f"{path.relative_to(REPO)}: expected exactly one current registry facts region"
+                f"{rel}: expected exactly one current registry facts region"
             )
         else:
             if re.search(
                 rf"(?<!\d){destination_count}(?!\d)", current_facts
             ) is None:
                 failures.append(
-                    f"{path.relative_to(REPO)}: current registry facts must mention "
+                    f"{rel}: current registry facts must mention "
                     f"destination count {destination_count}"
                 )
             for host in host_names:
                 if host not in current_facts:
                     failures.append(
-                        f"{path.relative_to(REPO)}: current registry facts missing host {host}"
+                        f"{rel}: current registry facts missing host {host}"
                     )
         for command in REQUIRED_COMMANDS:
             if command not in text:
-                failures.append(f"{path.relative_to(REPO)}: missing command {command!r}")
+                failures.append(f"{rel}: missing command {command!r}")
         for link in REQUIRED_LINKS:
             if link not in text:
-                failures.append(f"{path.relative_to(REPO)}: missing link {link!r}")
+                failures.append(f"{rel}: missing link {link!r}")
         for marker in REQUIRED_EVIDENCE_MARKERS:
             if marker not in text:
                 failures.append(
-                    f"{path.relative_to(REPO)}: missing evidence marker {marker!r}"
+                    f"{rel}: missing evidence marker {marker!r}"
                 )
         if EVIDENCE_SCOPE_MARKER not in text:
             failures.append(
-                f"{path.relative_to(REPO)}: missing version-scoped host evidence marker"
+                f"{rel}: missing version-scoped host evidence marker"
             )
 
     for failure in render_docs.assert_matrix_consistent(REPO):
@@ -329,8 +573,19 @@ def check() -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--check-live-metadata",
+        action="store_true",
+        help="Compare live GitHub About against tracked repository-metadata.json",
+    )
     namespace = parser.parse_args(argv)
     report = check()
+    live_failures: list[str] = []
+    if namespace.check_live_metadata:
+        live_failures = check_live_metadata()
+        if live_failures:
+            report["failures"].extend(live_failures)
+            report["ok"] = False
     if namespace.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     elif report["ok"]:

@@ -2,7 +2,7 @@
 <!-- portable-resume-counts: sources=17 destinations=18 -->
 # Portable Resume — हिन्दी त्वरित शुरुआत
 
-**वर्तमान प्रकाशित संस्करण:** [`0.4.1`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1)
+**वर्तमान प्रकाशित संस्करण:** [`0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3)
 
 Portable Resume, Claude, Codex, Cursor, OpenCode, Antigravity, Grok, Qwen या Kimi के सीमित स्थानीय context को एक **नई** coding-agent session में ले जाता है। यह चलती process या session को restore नहीं करता। reader offline और केवल Python standard library पर चलता है, source CLI कभी नहीं चलाता, तथा मिले हुए text को inert और untrusted चिह्नित करता है।
 

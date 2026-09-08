@@ -150,7 +150,7 @@ HOST_PROFILES: dict[str, HostProfile] = {
         ),
         arguments_note="Do not invent positional argv placeholders for this host.",
         caveats=(
-            "Shares project/global .agents/skills with Antigravity → use distinct --root or expect E_INSTALL_CONFLICT.",
+            "Shares default project .agents/skills with Antigravity and OpenHands; same-payload installations share the directory via multi-claim ownership (#25). Global defaults differ (~/.agents/skills vs ~/.gemini/config/skills).",
             "Official skill grammar is $skill-name, not /skill-name.",
             "No $ARGUMENTS argv API; text after $skill stays user/model context.",
         ),
@@ -278,7 +278,8 @@ HOST_PROFILES: dict[str, HostProfile] = {
         ),
         alternate_global_roots=(
             "~/.gemini/skills/ (Gemini CLI primary user root — different product)",
-            "~/.gemini/antigravity/skills/ or ~/.gemini/antigravity-cli/skills/ (flavor-specific)",
+            "~/.gemini/antigravity-cli/skills/ (Antigravity CLI v1.1.25+ user root; TUI slash command discovery)",
+            "~/.gemini/config/skills/ (Antigravity general / IDE cross-flavor root)",
             "~/.agents/skills/ (interop alias used by Gemini CLI)",
         ),
         install_methods=(
@@ -301,13 +302,14 @@ HOST_PROFILES: dict[str, HostProfile] = {
         ),
         arguments_note="No invented slash-command argv channel is claimed for this host.",
         caveats=(
-            "Project `.agents/skills` is shared with Codex; host-neutral Skill payloads (#25) allow both claims on one tree.",
-            "AGY / AGY CLI / AGY IDE may scan different global paths; ~/.gemini/config/skills is the cross-product global default here.",
+            "Project `.agents/skills` is shared with Codex and OpenHands; host-neutral Skill payloads (#25) allow multi-claim ownership on one tree.",
+            "AGY general / IDE uses ~/.gemini/config/skills with natural-language discovery; Antigravity CLI v1.1.25+ documents ~/.gemini/antigravity-cli/skills where registered skills become TUI slash commands without process argv binding. Use --root to target CLI-specific root explicitly if needed.",
             "Gemini CLI uses ~/.gemini/skills and .gemini/skills with .agents/skills alias precedence — not identical to Antigravity defaults.",
         ),
         evidence_notes=(
-            "Antigravity official: workspace .agents/skills + global ~/.gemini/config/skills; "
-            "legacy .agent/skills; NL activation + /skills list (2026-07-20)."
+            "Antigravity general: workspace .agents/skills + global ~/.gemini/config/skills; "
+            "Antigravity CLI v1.1.25: ~/.gemini/antigravity-cli/skills; legacy .agent/skills; "
+            "NL activation + /skills list; CLI discovery qualified separately (2026-07-20 / 2026-09-08)."
         ),
     ),
     "grok": HostProfile(
@@ -736,16 +738,17 @@ HOST_PROFILES: dict[str, HostProfile] = {
         official_docs=(
             "https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/skills.md",
         ),
-        project_layout="<project>/.hermes/skills/<name>/SKILL.md",
+        project_layout="<project>/.hermes/skills/<name>/SKILL.md (Git repo root required)",
         global_layout="$HERMES_HOME/skills/<name>/SKILL.md (default ~/.hermes/skills/)",
-        alternate_project_roots=(),
+        alternate_project_roots=(".agents/skills",),
         alternate_global_roots=(),
         install_methods=(
             "This installer: install-resume-skills install --host hermes --scope project|global",
+            "Project install: must install at Git repository root; run `hermes skills trust` to approve discovery",
             "Manual: copy each resume-*/ folder into $HERMES_HOME/skills or ~/.hermes/skills/",
         ),
         activation_help=(
-            "Load resume-<source> from the Hermes skills tree via slash command. "
+            "Load resume-<source> from the Hermes skills tree via slash command or tool invocation. "
             "Recovered text is inert/untrusted handoff only."
         ),
         activation_examples=(
@@ -762,10 +765,13 @@ HOST_PROFILES: dict[str, HostProfile] = {
             "Does not invoke Hermes CLI/gateway, Skill hub, taps, or messaging platforms.",
             "Native Hermes UI / picker activation evidence remains not-run.",
             "Global installs honor HERMES_HOME when set (absolute path).",
+            "Project skills require a Git repository root (nearest ancestor `.git`) and explicit user trust (`hermes skills trust`).",
+            "Untrusted or quarantined projects will not discover project skills; filesystem verification does not imply native discovery.",
         ),
         evidence_notes=(
-            "Hermes state.db schema 23 fixtures + Skills docs "
-            "(checked 2026-07-31). Filesystem install only in this release."
+            "Hermes state.db schema 23 fixtures + Skills docs (checked 2026-07-31). "
+            "Project discovery requires Git root + explicit trust (checked 2026-09-08). "
+            "Filesystem install only in this release."
         ),
         evidence_level="verified-filesystem",
         global_home_env="HERMES_HOME",

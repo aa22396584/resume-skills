@@ -431,5 +431,35 @@ class HostsCatalogTests(unittest.TestCase):
                         )
 
 
+    def test_codex_shared_root_caveat_does_not_claim_antigravity_conflict(self) -> None:
+        profile = HOST_PROFILES["codex"]
+        caveats_text = " ".join(profile.caveats)
+        self.assertNotIn("E_INSTALL_CONFLICT", caveats_text)
+        self.assertIn("multi-claim ownership", caveats_text)
+        self.assertIn(".agents/skills", caveats_text)
+        self.assertEqual(profile.global_rel, ".agents/skills")
+        self.assertEqual(HOST_PROFILES["antigravity"].global_rel, ".gemini/config/skills")
+
+    def test_antigravity_qualifies_cli_user_root_separately(self) -> None:
+        profile = HOST_PROFILES["antigravity"]
+        alt_roots = " ".join(profile.alternate_global_roots)
+        self.assertIn("~/.gemini/antigravity-cli/skills/", alt_roots)
+        self.assertIn("Antigravity CLI v1.1.25+", alt_roots)
+        self.assertIn("slash command discovery", alt_roots)
+        caveats_text = " ".join(profile.caveats)
+        self.assertIn("antigravity-cli/skills", caveats_text)
+        self.assertIn("TUI slash commands", caveats_text)
+
+    def test_hermes_project_install_requires_git_root_and_trust(self) -> None:
+        profile = HOST_PROFILES["hermes"]
+        self.assertIn("Git repo root required", profile.project_layout)
+        install_methods_text = " ".join(profile.install_methods)
+        self.assertIn("hermes skills trust", install_methods_text)
+        caveats_text = " ".join(profile.caveats)
+        self.assertIn("Git repository root", caveats_text)
+        self.assertIn("hermes skills trust", caveats_text)
+        self.assertIn("quarantined", caveats_text)
+
+
 if __name__ == "__main__":
     unittest.main()

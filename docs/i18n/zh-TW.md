@@ -2,9 +2,9 @@
 <!-- portable-resume-counts: sources=17 destinations=18 -->
 # Portable Resume — 繁體中文快速指南
 
-**目前已發布版本：** [`0.4.1`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1)
+**目前已發布版本：** [`0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3)
 
-Portable Resume 可把 Claude、Codex、Cursor、OpenCode、Antigravity、Grok、Qwen、Kimi 的有限本機脈絡帶到**全新**的程式代理工作階段；它不是即時程序或工作階段還原。讀取器離線、僅使用 Python 標準函式庫、不會呼叫來源 CLI，並把復原文字標示為惰性且不受信任。
+Portable Resume 可把 17 個支援來源（包含 Claude、Codex、Cursor、OpenCode、Antigravity、Grok、Qwen、Kimi、Pi、OpenClaw、goose、Crush、Cline、OpenHands、Hermes、GitHub Copilot、Gemini）的有限本機脈絡帶到**全新**的程式代理工作階段；它不是即時程序或工作階段還原。讀取器離線、僅使用 Python 標準函式庫、不會呼叫來源 CLI，並把復原文字標示為惰性且不受信任。
 
 ## 安裝
 
@@ -31,7 +31,7 @@ install-resume-skills quick-install qwen --project "$PWD"
 `main` 上啟用的目的端為 Antigravity / agy、Claude Code、Cline、Codex CLI / IDE、Crush、Cursor Agent、Gemini CLI、GitHub Copilot CLI、goose、Grok Build、Hermes Agent、Kilo CLI、Kimi Code CLI、OpenClaw、OpenCode、OpenHands、Pi agent，以及 Qwen Code。
 <!-- portable-resume-current-registry:end -->
 
-已發布的 `0.4.0` 含九個目的端（含 Pi 檔案系統安裝；原生 UI 仍為 not-run）。每個 host 的直接 Skill、extension、plugin 與 marketplace 正確指令請見[安裝指南](../install-hosts.md)。信任第三方 plugin 前，請先檢查內容與 release SHA-256。
+已發布的 `0.4.3` 包含 17 個來源與 18 個目的端。每個 host 的直接 Skill、extension、plugin 與 marketplace 正確指令請見[安裝指南](../install-hosts.md)。信任第三方 plugin 前，請先檢查內容與 release SHA-256。
 
 ## 公開 marketplace
 

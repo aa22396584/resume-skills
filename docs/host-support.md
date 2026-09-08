@@ -31,7 +31,7 @@ This repository ships **17** enabled source Skills to **18** destination hosts (
 | GitHub Copilot CLI | `github-copilot-v1` | `<project>/.github/skills/<name>/SKILL.md` | `$COPILOT_HOME/skills/<name>/SKILL.md (default ~/.copilot/skills/)` |
 | goose | `goose-v1` | `<project>/.goose/skills/<name>/SKILL.md` | `~/.config/goose/skills/<name>/SKILL.md` |
 | Grok Build | `grok-v1` | `<repo>/.grok/skills/<name>/SKILL.md (CWD + repo root)` | `~/.grok/skills/<name>/SKILL.md` |
-| Hermes Agent | `hermes-v1` | `<project>/.hermes/skills/<name>/SKILL.md` | `$HERMES_HOME/skills/<name>/SKILL.md (default ~/.hermes/skills/)` |
+| Hermes Agent | `hermes-v1` | `<project>/.hermes/skills/<name>/SKILL.md (Git repo root required)` | `$HERMES_HOME/skills/<name>/SKILL.md (default ~/.hermes/skills/)` |
 | Kilo CLI | `kilo-v1` | `<project>/.kilocode/skills/<name>/SKILL.md` | `$KILO_CONFIG_DIR/skills or ~/.config/kilo/skills/<name>/SKILL.md` |
 | Kimi Code CLI | `kimi-code-v2` | `<project>/.kimi-code/skills/<name>/SKILL.md` | `$KIMI_CODE_HOME/skills/<name>/SKILL.md (default ~/.kimi-code/skills)` |
 | OpenClaw | `openclaw-v1` | `<workspace>/skills/<name>/SKILL.md` | `~/.openclaw/skills/<name>/SKILL.md` |

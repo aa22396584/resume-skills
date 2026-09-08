@@ -29,4 +29,6 @@ As of this note, native activation / marketplace / visual pickers for post-v0.3.
 
 ## Windows mutating install (#125)
 
-POSIX dirfd/lock path is fail-closed on `os.name == "nt"` with `E_INSTALL_UNSUPPORTED_PLATFORM` (Policy B). A full Windows implementation is **not** shipped; dual-OS **mutating install** claim stays incomplete until #125 lands on real Windows CI.
+*Historical note: Initial release fail-closed on Windows (`E_INSTALL_UNSUPPORTED_PLATFORM`).*
+
+Windows mutating installation is now implemented and verified in CI via the dedicated `test-windows` job (see [`STATUS.md`](../STATUS.md) and [`matrix-current.md`](../matrix-current.md)). Focused product-install gates cover Windows platform safety and transaction containment. Universal dual-OS 306-cell host-native UI evidence remains a separate claim.

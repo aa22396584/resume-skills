@@ -1,0 +1,22 @@
+{
+  "schema_version": "portable-resume/repo-metadata-v1",
+  "description": "Offline context handoff between coding agents. Read local histories into fresh sessions; source stores stay unchanged. Stdlib-only Python, not live session restore.",
+  "homepage": "https://github.com/ImL1s/resume-skills/tree/main/docs",
+  "topics": [
+    "agent-skills",
+    "apache-2",
+    "claude-code",
+    "cli",
+    "codex",
+    "context-migration",
+    "cursor",
+    "devtools",
+    "kimi-code",
+    "offline",
+    "pi-agent",
+    "portable",
+    "python",
+    "qwen-code",
+    "session-context"
+  ]
+}
