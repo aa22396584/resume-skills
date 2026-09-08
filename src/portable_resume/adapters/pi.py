@@ -124,6 +124,21 @@ def _cwd_slug(cwd: str) -> str:
     return f"--{body}--"
 
 
+def _cwd_slug_candidates(cwd: str) -> list[str]:
+    candidates = [_cwd_slug(cwd)]
+    raw = cwd.strip()
+    if len(raw) >= 2 and raw[1] == ":" and raw[0].isalpha():
+        raw_no_drive = raw[2:]
+    else:
+        raw_no_drive = raw
+    clean = raw_no_drive.replace("\\", "/").strip("/")
+    alt_body = "".join(char if char.isalnum() else "-" for char in clean)
+    alt_slug = f"--{alt_body}--"
+    if alt_slug not in candidates:
+        candidates.append(alt_slug)
+    return candidates
+
+
 def _eligible(summary: SessionSummary, query: Query) -> bool:
     if query.cwd is not None and (summary.cwd is None or not same_cwd(summary.cwd, query.cwd)):
         return False
@@ -244,10 +259,15 @@ class PiAdapter:
             raise DiagnosticError("E_NO_MATCH", source=self.key)
         if query.cwd is None:
             return []
-        bucket = os.path.join(root, "sessions", _cwd_slug(query.cwd))
-        if os.path.islink(bucket):
-            raise DiagnosticError.unsafe_path()
-        if not os.path.isdir(bucket):
+        bucket: str | None = None
+        for slug in _cwd_slug_candidates(query.cwd):
+            cand_bucket = os.path.join(root, "sessions", slug)
+            if os.path.islink(cand_bucket):
+                raise DiagnosticError.unsafe_path()
+            if os.path.isdir(cand_bucket):
+                bucket = cand_bucket
+                break
+        if bucket is None:
             return []
         if not is_within(bucket, root):
             raise DiagnosticError.unsafe_path()

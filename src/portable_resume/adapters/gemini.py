@@ -288,19 +288,26 @@ def _project_hashes_for_cwd(cwd: str | None) -> frozenset[str] | None:
     if not text:
         return None
     spellings: list[str] = []
-    for base in _macos_path_aliases(text):
-        spellings.append(base)
-        stripped = base.rstrip("/\\")
-        if stripped and stripped != base:
-            spellings.append(stripped)
-        elif not base.endswith(("/", "\\")):
-            spellings.append(base + "/")
+    candidates = [text, text.replace("\\", "/"), text.replace("/", "\\")]
+    if len(text) >= 2 and text[1] == ":" and text[0].isalpha():
+        drive_stripped = text[2:]
+        candidates.extend([drive_stripped, drive_stripped.replace("\\", "/"), drive_stripped.replace("/", "\\")])
     try:
         real = canonicalize_cwd(text)
-        for base in _macos_path_aliases(real):
-            spellings.append(base)
+        candidates.extend([real, real.replace("\\", "/"), real.replace("/", "\\")])
+        if len(real) >= 2 and real[1] == ":" and real[0].isalpha():
+            real_drive_stripped = real[2:]
+            candidates.extend([real_drive_stripped, real_drive_stripped.replace("\\", "/"), real_drive_stripped.replace("/", "\\")])
     except DiagnosticError:
         pass
+    for cand in candidates:
+        for base in _macos_path_aliases(cand):
+            spellings.append(base)
+            stripped = base.rstrip("/\\")
+            if stripped and stripped != base:
+                spellings.append(stripped)
+            elif not base.endswith(("/", "\\")):
+                spellings.append(base + "/")
     return frozenset(_sha256_hex(item) for item in dict.fromkeys(spellings))
 
 

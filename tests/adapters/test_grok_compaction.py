@@ -26,6 +26,8 @@ def fixture_root(case: str) -> Path:
 
 
 def query(root: Path, ref: str | None = None, **kwargs: object) -> Query:
+    if "within_min" not in kwargs:
+        kwargs["within_min"] = 0
     return Query(source="grok", ref=ref, cwd=CWD, source_root=str(root), **kwargs)
 
 
@@ -200,6 +202,8 @@ class GrokCompactionTests(unittest.TestCase):
                 CWD,
                 "--source-root",
                 str(root),
+                "--within-min",
+                "0",
                 "--format",
                 "json",
             ],

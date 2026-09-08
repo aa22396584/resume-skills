@@ -68,7 +68,7 @@ class ClaudeAdapterTests(unittest.TestCase):
         root = Path(
             "tests/fixtures/claude/s-cla-09-unmatched-cwd-bounds/root"
         ).resolve()
-        return Query("claude", cwd=cwd, source_root=str(root))
+        return Query("claude", cwd=cwd, source_root=str(root), within_min=0)
 
     def session(self, records: list[dict], *, identifier: str | None = None, project: str = "project", trailing: bytes = b"") -> tuple[str, Path]:
         identifier = identifier or str(uuid.uuid4())
@@ -229,6 +229,8 @@ class ClaudeAdapterTests(unittest.TestCase):
                 "/workspace/project",
                 "--source-root",
                 str(fixture_root),
+                "--within-min",
+                "0",
                 "--format",
                 "handoff",
             ],

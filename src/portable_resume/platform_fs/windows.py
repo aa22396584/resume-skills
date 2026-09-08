@@ -298,10 +298,10 @@ def _check_reparse_components(
         current = os.path.join(current, component)
         try:
             st = os.lstat(current)
-        except FileNotFoundError:
+        except FileNotFoundError as error:
             if allow_nonexistent:
                 break
-            raise
+            raise DiagnosticError.unsafe_path() from error
         except OSError as error:
             raise DiagnosticError.unsafe_path() from error
 

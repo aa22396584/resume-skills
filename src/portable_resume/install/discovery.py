@@ -715,7 +715,12 @@ def _read_regular_capped(path: str, *, max_bytes: int) -> bytes | None:
         return None
     if path_st.st_size > max_bytes:
         return None
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
     try:
         fd = os.open(path, flags)
     except OSError:
@@ -753,6 +758,18 @@ def _read_regular_capped(path: str, *, max_bytes: int) -> bytes | None:
             return None
         if any(getattr(current, field) != getattr(after, field) for field in stable_fields):
             return None
+        if os.name == "nt":
+            try:
+                flags_recheck = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+                recheck_fd = os.open(path, flags_recheck)
+                try:
+                    recheck_bytes = os.read(recheck_fd, len(body) + 1)
+                    if recheck_bytes != body:
+                        return None
+                finally:
+                    os.close(recheck_fd)
+            except OSError:
+                return None
         return body
     finally:
         os.close(fd)

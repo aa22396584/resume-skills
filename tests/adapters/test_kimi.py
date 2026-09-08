@@ -269,7 +269,7 @@ class KimiAdapterTests(unittest.TestCase):
                 self.assertEqual(values[0].provider, LEGACY_FORMAT_ID)
                 stdout, stderr = io.StringIO(), io.StringIO()
                 code = run(
-                    ["kimi", "show", "latest", "--cwd", CWD, "--json"],
+                    ["kimi", "show", "latest", "--cwd", CWD, "--within-min", "0", "--json"],
                     stdout=stdout,
                     stderr=stderr,
                 )

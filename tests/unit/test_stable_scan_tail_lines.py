@@ -63,8 +63,10 @@ class HashDescriptorWindowTests(unittest.TestCase):
             path = Path(tmp) / "w.jsonl"
             path.write_bytes(b"AAAA\nBBBB\n")
             descriptor = os.open(str(path), os.O_RDONLY)
-            self.addCleanup(os.close, descriptor)
-            digest, total = _hash_descriptor_window(descriptor, start=5, maximum=1024)
+            try:
+                digest, total = _hash_descriptor_window(descriptor, start=5, maximum=1024)
+            finally:
+                os.close(descriptor)
             self.assertEqual(total, 5)  # "BBBB\n"
             self.assertEqual(digest, hashlib.sha256(b"BBBB\n").hexdigest())
 
@@ -73,9 +75,11 @@ class HashDescriptorWindowTests(unittest.TestCase):
             path = Path(tmp) / "w.jsonl"
             path.write_bytes(b"ABCDEF")
             descriptor = os.open(str(path), os.O_RDONLY)
-            self.addCleanup(os.close, descriptor)
-            with self.assertRaises(DiagnosticError) as caught:
-                _hash_descriptor_window(descriptor, start=0, maximum=3)
+            try:
+                with self.assertRaises(DiagnosticError) as caught:
+                    _hash_descriptor_window(descriptor, start=0, maximum=3)
+            finally:
+                os.close(descriptor)
             self.assertEqual(caught.exception.code, "E_LIMIT_EXCEEDED")
 
     def test_discarded_partial_prefix_still_enforces_observed_record_bytes(self) -> None:
@@ -129,7 +133,11 @@ class StableScanTailLinesTests(unittest.TestCase):
             # Line widths vary: {"n":0}-{"n":9} are 8 bytes, {"n":10}-{"n":99}
             # are 9 bytes, {"n":100}-{"n":199} are 10 bytes; 200 lines = 1890
             # bytes total.
-            path.write_text("".join(f'{{"n":{i}}}\n' for i in range(200)), encoding="utf-8")
+            path.write_text(
+                "".join(f'{{"n":{i}}}\n' for i in range(200)),
+                encoding="utf-8",
+                newline="\n",
+            )
             tight = Bounds(
                 source_read_bytes=512,
                 transcript_records=5_000,

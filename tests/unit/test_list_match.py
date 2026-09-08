@@ -103,6 +103,8 @@ class ListMatchCliTests(unittest.TestCase):
                 _CWD,
                 "--source-root",
                 str(_FIXTURE_ROOT),
+                "--within-min",
+                "0",
                 "--format",
                 "json",
                 "--match",

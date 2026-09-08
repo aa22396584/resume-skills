@@ -154,7 +154,18 @@ def _chat_hash_dirs(root: str, query: Query) -> list[str]:
         return []
     if query.cwd is not None:
         candidate = os.path.join(chats, _cwd_hash(canonicalize_cwd(query.cwd)))
-        return [candidate] if _regular_directory(candidate, root) else []
+        if _regular_directory(candidate, root):
+            return [candidate]
+        raw_text = query.cwd.strip()
+        alts = [raw_text, raw_text.replace("\\", "/"), raw_text.replace("/", "\\")]
+        if len(raw_text) >= 2 and raw_text[1] == ":":
+            stripped_drive = raw_text[2:]
+            alts.extend([stripped_drive, stripped_drive.replace("\\", "/"), stripped_drive.replace("/", "\\")])
+        for alt in alts:
+            alt_candidate = os.path.join(chats, _cwd_hash(alt))
+            if _regular_directory(alt_candidate, root):
+                return [alt_candidate]
+        return []
     try:
         names = sorted(os.listdir(chats))
     except OSError as error:
@@ -219,7 +230,7 @@ def _metadata(path: str, root: str, budget: ReadBudget) -> tuple[StableRead, dic
         raise DiagnosticError("E_CORRUPT_RECORD", source="cursor", provider=CLI_FORMAT) from error
     session_dir = os.path.dirname(path)
     actual_hash = os.path.basename(os.path.dirname(session_dir))
-    if identifier != os.path.basename(session_dir) or value["cwd_hash"] != _cwd_hash(cwd) or actual_hash != value["cwd_hash"]:
+    if identifier != os.path.basename(session_dir) or value["cwd_hash"] not in (_cwd_hash(value["cwd"]), _cwd_hash(cwd)) or actual_hash != value["cwd_hash"]:
         raise DiagnosticError("E_UNSUPPORTED_FORMAT", source="cursor", provider=CLI_FORMAT)
     if type(value.get("archived")) is not bool or value.get("composer_kind") not in {"project", "subagent"}:
         raise DiagnosticError("E_CORRUPT_RECORD", source="cursor", provider=CLI_FORMAT)

@@ -99,6 +99,8 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_file(path: str) -> str:
     """Hash a regular file without following symlinks when O_NOFOLLOW is available."""
+    if os.path.islink(path):
+        raise OSError("Refusing to hash symlink")
     flags = (
         os.O_RDONLY
         | getattr(os, "O_BINARY", 0)

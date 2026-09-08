@@ -102,7 +102,9 @@ jobs:
       - name: All 17 sources fixture list+show (Windows nt)
         env:
           PYTHONPATH: src
-        run: python scripts/self_verify.py --only windows_source_fixtures
+        run: |
+          python scripts/self_verify.py --only windows_source_fixtures
+          python scripts/self_verify.py --only windows_negative_diagnostics
 
       # Windows hard gate: focused product install smoke only (claude/cursor/codex).
       # Full 306-cell smoke_installed_matrix is Ubuntu-only — do not claim Windows 306/306.

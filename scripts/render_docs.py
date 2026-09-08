@@ -432,7 +432,7 @@ def check(root: Path = REPO) -> list[str]:
             current = path.read_text(encoding="utf-8")
             expected = _render_file(root, relative, names)
         except FileNotFoundError:
-            failures.append(f"{relative}: missing registered document")
+            failures.append(f"{relative.as_posix()}: missing registered document")
             continue
         except (OSError, ValueError) as exc:
             failures.append(str(exc))
@@ -444,8 +444,8 @@ def check(root: Path = REPO) -> list[str]:
                 difflib.unified_diff(
                     current.splitlines(keepends=True),
                     expected.splitlines(keepends=True),
-                    fromfile=str(relative),
-                    tofile=f"{relative} (rendered)",
+                    fromfile=relative.as_posix(),
+                    tofile=f"{relative.as_posix()} (rendered)",
                 )
             )
         )

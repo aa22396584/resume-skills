@@ -106,6 +106,8 @@ class NoSourceCliExecTests(unittest.TestCase):
                     "/workspace/project",
                     "--source-root",
                     str(fixture.resolve()),
+                    "--within-min",
+                    "0",
                     "--format",
                     "handoff",
                 ],

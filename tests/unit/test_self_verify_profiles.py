@@ -41,9 +41,10 @@ class SelfVerifyProfileTests(unittest.TestCase):
         self.assertIn("compile", compat)
         self.assertNotIn("packaging", compat)
         self.assertIn("packaging", self_verify_module.STAGE_NAMES)
-        # Windows profile uses portable units + 17-source fixture smoke.
+        # Windows profile uses portable units + 17-source fixture smoke + negative diagnostics.
         self.assertIn("unit_portable", win)
         self.assertIn("windows_source_fixtures", win)
+        self.assertIn("windows_negative_diagnostics", win)
         self.assertNotIn("unit", win)
         # Local remains the full pre-commit set (subset of stage allowlist).
         local = self_verify_module.PROFILES["local"]
@@ -64,6 +65,41 @@ class SelfVerifyProfileTests(unittest.TestCase):
                 "tests/unit",
             ],
         )
+
+    def test_format_unit_failure_retains_suite_name_and_bounded_truncation(self) -> None:
+        short = self_verify_module._format_unit_failure("adapters", "short error")
+        self.assertTrue(short.startswith("FAILED_SUITE: adapters\n"))
+        self.assertIn("short error", short)
+
+        huge = "head_mark " + ("x" * 5000) + " tail_mark"
+        formatted = self_verify_module._format_unit_failure("security", huge, max_chars=100)
+        self.assertTrue(formatted.startswith("FAILED_SUITE: security\n"))
+        self.assertIn("[...truncated...]", formatted)
+        self.assertIn("head_mark", formatted)
+        self.assertIn("tail_mark", formatted)
+        self.assertLessEqual(len(formatted), 100 + len("FAILED_SUITE: security\n"))
+
+    def test_windows_source_fixtures_fails_on_diagnostic_exit_or_json(self) -> None:
+        with mock.patch.object(self_verify_module, "run") as mock_run:
+            mock_run.return_value = mock.Mock(
+                returncode=3,
+                stdout='{"schema_version":"portable-resume/diagnostic-v1","code":"E_NO_MATCH"}',
+                stderr="",
+            )
+            code, msg = self_verify_module._stage_windows_source_fixtures()
+            self.assertEqual(code, 1)
+            self.assertIn("failures=", msg)
+
+    def test_windows_negative_diagnostics_requires_diagnostic_exit(self) -> None:
+        with mock.patch.object(self_verify_module, "run") as mock_run:
+            mock_run.return_value = mock.Mock(
+                returncode=0,
+                stdout='{"schema_version":"portable-resume/v1"}',
+                stderr="",
+            )
+            code, msg = self_verify_module._stage_windows_negative_diagnostics()
+            self.assertEqual(code, 1)
+            self.assertIn("failures=", msg)
 
     def test_resolve_stages_rejects_unknown_names(self) -> None:
         with self.assertRaises(SystemExit):
