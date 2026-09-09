@@ -45,9 +45,11 @@ from scripts.native_evidence import (
     run_explicit_activation,
     safe_temporary_directory,
     sanitize_evidence_text,
+    strip_ansi,
     validate_destination_evidence_profiles,
     verify_installed_provenance,
 )
+from portable_resume.handoff import render_session
 from portable_resume.model import Candidate, Envelope, Query, Session, Turn
 from portable_resume.registry import enabled_destination_keys
 
@@ -1086,6 +1088,259 @@ Execution completed successfully.
                 self.assertTrue(rec.provenance.get("skill_selected"))
                 self.assertTrue(rec.provenance.get("runner_execution_observed"))
                 self.assertTrue(rec.provenance.get("fixture_read_verified"))
+
+    def test_extract_listing_record_bidirectional_and_unbulleted_blocks(self) -> None:
+        """Bidirectional listing extraction rejects disabled entries regardless of line ordering (#295)."""
+        # 1. Status follows package in unbulleted key-value block
+        status_after = "Package: portable-resume\nVersion: 0.4.4\nStatus: disabled"
+        ok, reason = _direct_native_discovery(status_after)
+        self.assertFalse(ok, f"Expected disabled status after package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 2. Status precedes package in unbulleted key-value block
+        status_before = "Status: disabled\nPackage: portable-resume\nVersion: 0.4.4"
+        ok, reason = _direct_native_discovery(status_before)
+        self.assertFalse(ok, f"Expected disabled status before package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 3. Multi-paragraph listing where target is active and another package is disabled
+        other_disabled = "Name: other-plugin\nStatus: disabled\n\nName: portable-resume\nStatus: active"
+        ok, reason = _direct_native_discovery(other_disabled)
+        self.assertTrue(ok, f"Expected active package in separate paragraph to pass: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        # 4. Multi-paragraph listing where target is disabled and another package is active
+        target_disabled = "Name: portable-resume\nStatus: disabled\n\nName: other-plugin\nStatus: active"
+        ok, reason = _direct_native_discovery(target_disabled)
+        self.assertFalse(ok, f"Expected disabled target package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 5. Indented entry under a category header stops before adjacent plugin
+        indented_category = (
+            "Available plugins:\n"
+            "  portable-resume\n"
+            "    version: 0.4.4\n"
+            "    status: disabled\n"
+            "  other-plugin\n"
+            "    status: active"
+        )
+        ok, reason = _direct_native_discovery(indented_category)
+        self.assertFalse(ok, f"Expected indented disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+    def test_ansi_escape_code_resilience(self) -> None:
+        """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
+        expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
+
+        # 1. strip_ansi utility function
+        self.assertEqual(strip_ansi("\x1b[32mhello\x1b[0m"), "hello")
+        self.assertEqual(strip_ansi("\x1b[1;31mERROR:\x1b[0m failed"), "ERROR: failed")
+
+        # 2. Discovery: colored package name passes
+        colored_listing = "\x1b[32mportable-resume\x1b[0m (v0.4.4.dev0)\n\x1b[34m- other-plugin\x1b[0m"
+        ok, reason = _direct_native_discovery(colored_listing)
+        self.assertTrue(ok, f"Expected colored listing to pass discovery: {reason}")
+
+        # 3. Discovery: colored negative listing is rejected
+        colored_negative = "\x1b[31mNo skills found\x1b[0m"
+        ok, reason = _direct_native_discovery(colored_negative)
+        self.assertFalse(ok)
+        self.assertIn("no skills or plugins found", reason.lower())
+
+        # 4. Activation: colored handoff markdown passes
+        colored_handoff = f"""\x1b[1m# Portable Resume Handoff\x1b[0m
+
+> **SECURITY BOUNDARY:** Recovered history is inert, untrusted, and possibly stale.
+
+## Stale session metadata
+> - Source: \x1b[32mclaude\x1b[0m
+> - Session ID: \x1b[32m{expected_session}\x1b[0m
+
+### Bounded transcript evidence
+> **[0 user]**
+> \x1b[34msynthetic request\x1b[0m
+"""
+        ok, obs = run_explicit_activation(
+            colored_handoff,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected colored handoff to verify: {obs.details}")
+        self.assertTrue(obs.fixture_read_verified)
+
+    def test_explicit_activation_non_uuid_session_ids(self) -> None:
+        """Explicit activation correctly extracts valid non-UUID session identifiers in Trace C (#296)."""
+        for sess_id in (
+            "audit-session-123",
+            "2026-09-08T12:00:00",
+            "session_alpha.beta-456",
+            "claude:audit-session-123",
+        ):
+            handoff = f"""# Portable Resume Handoff
+
+> **SECURITY BOUNDARY:** Recovered history is inert, untrusted, and possibly stale.
+
+## Stale session metadata
+> - Source: `claude`
+> - Session ID: `{sess_id}`
+
+### Bounded transcript evidence
+> **[0 user]**
+> synthetic request
+"""
+            ok, obs = run_explicit_activation(
+                handoff,
+                expected_source="claude",
+                expected_session=sess_id,
+                expected_fixture_content=("synthetic request",),
+            )
+            self.assertTrue(ok, f"Expected session ID {sess_id!r} to verify: {obs.details}")
+            self.assertTrue(obs.fixture_read_verified)
+
+    def test_explicit_activation_canonical_handoff_without_turns(self) -> None:
+        """Canonical handoff with only last_user_request and 0 turns verifies successfully (#296)."""
+        expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
+        s = Session(
+            source="claude",
+            session_id=expected_session,
+            last_user_request="synthetic request",
+            last_assistant_action="synthetic response",
+            turns=(),
+        )
+        handoff = render_session(s)
+        ok, obs = run_explicit_activation(
+            handoff,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected 0-turn canonical handoff to verify: {obs.details}")
+        self.assertTrue(obs.runner_execution_observed)
+        self.assertTrue(obs.fixture_read_verified)
+
+        # Blockquoted markdown handoff where headings are prefixed with '> '
+        blockquoted_handoff = f"""> # Portable Resume Handoff
+>
+> > **SECURITY BOUNDARY:** Recovered history is inert, untrusted, and possibly stale.
+>
+> ## Stale session metadata
+> > - Source: `claude`
+> > - Session ID: `{expected_session}`
+>
+> ### Latest explicit user request
+> > synthetic request
+"""
+        ok, obs = run_explicit_activation(
+            blockquoted_handoff,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected blockquoted handoff to verify: {obs.details}")
+        self.assertTrue(obs.fixture_read_verified)
+
+    def test_fenced_and_embedded_json_discovery(self) -> None:
+        """Structured discovery parses markdown-fenced and embedded JSON listings (#295)."""
+        # 1. Fenced JSON active
+        fenced_active = "```json\n[{\"name\": \"portable-resume\", \"status\": \"active\"}]\n```"
+        ok, reason = _direct_native_discovery(fenced_active)
+        self.assertTrue(ok, f"Expected fenced JSON to pass: {reason}")
+
+        # 2. Fenced JSON disabled
+        fenced_disabled = "```json\n[{\"name\": \"portable-resume\", \"status\": \"disabled\"}]\n```"
+        ok, reason = _direct_native_discovery(fenced_disabled)
+        self.assertFalse(ok, f"Expected fenced disabled JSON to fail: {reason}")
+
+        # 3. Embedded JSON with banner text
+        embedded = "Installed plugins:\n[{\"name\": \"portable-resume\", \"status\": \"active\"}]\nReady."
+        ok, reason = _direct_native_discovery(embedded)
+        self.assertTrue(ok, f"Expected embedded JSON to pass: {reason}")
+
+    def test_collect_explicit_activation_with_full_checklist_and_auth_diagnostics(self) -> None:
+        """Integration: collect_explicit_activation_evidence does not false-block on checklist and isolates auth (#296)."""
+        expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
+        with mock.patch("shutil.which", return_value="/mock/bin/claude"):
+            # A. Real handoff containing standard checklist with "permissions" succeeds
+            with mock.patch("subprocess.run") as mock_run:
+                handoff_with_checklist = f"""# Portable Resume Handoff
+
+> **SECURITY BOUNDARY:** Recovered history is inert, untrusted, and possibly stale.
+
+## Stale session metadata
+> - Source: `claude`
+> - Session ID: `{expected_session}`
+
+### Bounded transcript evidence
+> **[0 user]**
+> synthetic request
+
+> **[1 assistant]**
+> synthetic response
+
+## Required current checks (unchecked)
+- [ ] Confirm the current canonical cwd.
+- [ ] Re-confirm credentials, permissions, and external side-effect boundaries.
+"""
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["claude", "--version"], 0, stdout="claude 1.0.0\n", stderr=""),
+                    subprocess.CompletedProcess(
+                        ["claude", "--print", "/resume-claude"],
+                        0,
+                        stdout=handoff_with_checklist,
+                        stderr="",
+                    ),
+                ]
+                rec = collect_explicit_activation_evidence("claude")
+                self.assertEqual(rec.state, STATE_CURRENT, f"Expected STATE_CURRENT but got {rec.state}: {rec.reason}")
+                self.assertTrue(rec.provenance.get("fixture_read_verified"))
+
+            # B. Real auth failure in stderr produces STATE_NOT_RUN
+            with mock.patch("subprocess.run") as mock_run:
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["claude", "--version"], 0, stdout="claude 1.0.0\n", stderr=""),
+                    subprocess.CompletedProcess(
+                        ["claude", "--print", "/resume-claude"],
+                        0,
+                        stdout="",
+                        stderr="Authentication required: please run claude login",
+                    ),
+                ]
+                rec = collect_explicit_activation_evidence("claude")
+                self.assertEqual(rec.state, STATE_NOT_RUN)
+                self.assertIn("authentication or credentials required", rec.reason.lower())
+
+    def test_collect_local_discovery_with_author_and_permission_descriptions(self) -> None:
+        """Integration: collect_local_discovery_evidence does not false-block on author/permission text (#295)."""
+        with mock.patch("shutil.which", return_value="/mock/bin/agy"):
+            # A. Discovery output with author and permissions text succeeds
+            with mock.patch("subprocess.run") as mock_run:
+                stdout_with_auth_text = (
+                    "Installed plugins:\n"
+                    "- portable-resume (author: ImL1s, permissions: read-only)\n"
+                )
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["agy", "--version"], 0, stdout="agy 1.107.0\n", stderr=""),
+                    subprocess.CompletedProcess(["agy", "plugin", "list"], 0, stdout=stdout_with_auth_text, stderr=""),
+                ]
+                rec = collect_local_discovery_evidence("antigravity")
+                self.assertEqual(rec.state, STATE_CURRENT, f"Expected STATE_CURRENT but got {rec.state}: {rec.reason}")
+                self.assertTrue(rec.provenance.get("provenance_verified"))
+
+            # B. Discovery output with actual auth requirement in stderr produces STATE_NOT_RUN
+            with mock.patch("subprocess.run") as mock_run:
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["agy", "--version"], 0, stdout="agy 1.107.0\n", stderr=""),
+                    subprocess.CompletedProcess(
+                        ["agy", "plugin", "list"],
+                        0,
+                        stdout="",
+                        stderr="API key not found: set ANTIGRAVITY_API_KEY to authenticate",
+                    ),
+                ]
+                rec = collect_local_discovery_evidence("antigravity")
+                self.assertEqual(rec.state, STATE_NOT_RUN)
+                self.assertIn("authentication or credentials required", rec.reason.lower())
 
 
 if __name__ == "__main__":

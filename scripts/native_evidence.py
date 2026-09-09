@@ -872,6 +872,14 @@ class ExplicitActivationObservation:
         return asdict(self)
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def strip_ansi(text: str) -> str:
+    """Strip terminal ANSI escape sequences from command output (#295, #296)."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
 def _direct_native_discovery(
     stdout: str,
     stderr: str = "",
@@ -889,6 +897,9 @@ def _direct_native_discovery(
     """
     if returncode != 0:
         return False, f"Subprocess exited with non-zero code {returncode}"
+
+    stdout = strip_ansi(stdout)
+    stderr = strip_ansi(stderr)
 
     if not stdout.strip():
         return False, "Subprocess returned empty output"
@@ -930,44 +941,66 @@ def _direct_native_discovery(
     ):
         return False, "Generic validation output does not establish native package discovery"
 
-    # Attempt structured JSON parsing
+    # Attempt structured JSON parsing (direct, fenced, or embedded)
     try:
-        data = json.loads(stdout)
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            items = data.get("plugins") or data.get("skills") or data.get("extensions") or [data]
+        data = None
+        stripped = stdout.strip()
+        if (stripped.startswith("{") and stripped.endswith("}")) or (
+            stripped.startswith("[") and stripped.endswith("]")
+        ):
+            data = json.loads(stripped)
         else:
-            items = []
+            fence_match = re.search(r"```(?:json)?\s*([{\[].*?[}\]])\s*```", stdout, re.DOTALL)
+            if fence_match:
+                data = json.loads(fence_match.group(1).strip())
+            else:
+                for start_char in ("{", "["):
+                    idx = stdout.find(start_char)
+                    if idx != -1:
+                        try:
+                            obj, _ = json.JSONDecoder().raw_decode(stdout, idx)
+                            if isinstance(obj, (dict, list)):
+                                data = obj
+                                break
+                        except Exception:
+                            pass
 
-        for item in items:
-            if isinstance(item, dict):
-                name = item.get("name") or item.get("id") or item.get("plugin") or item.get("skill")
-                if name in (expected_package, expected_skill):
-                    if item.get("enabled") is False or item.get("active") is False:
-                        return False, f"Package {name} discovered but marked enabled/active=False"
-                    if item.get("error") or item.get("load_error") or item.get("error_message"):
-                        err = item.get("error") or item.get("load_error") or item.get("error_message")
-                        return False, f"Package {name} discovered with error: {err}"
-                    status = str(item.get("status") or item.get("state") or "").lower()
-                    if status and any(
-                        neg in status
-                        for neg in (
-                            "disabled",
-                            "error",
-                            "failed",
-                            "inactive",
-                            "off",
-                            "blocked",
-                            "not found",
-                            "broken",
-                            "unload",
-                        )
-                    ):
-                        return False, f"Package {name} discovered but in {status} state"
-                    return True, f"Discovered expected package {name!r} via structured host JSON"
-            elif isinstance(item, str) and item in (expected_package, expected_skill):
-                return True, f"Discovered expected skill {item!r} via structured host JSON list"
+        if data is not None:
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get("plugins") or data.get("skills") or data.get("extensions") or [data]
+            else:
+                items = []
+
+            for item in items:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("id") or item.get("plugin") or item.get("skill")
+                    if name in (expected_package, expected_skill):
+                        if item.get("enabled") is False or item.get("active") is False:
+                            return False, f"Package {name} discovered but marked enabled/active=False"
+                        if item.get("error") or item.get("load_error") or item.get("error_message"):
+                            err = item.get("error") or item.get("load_error") or item.get("error_message")
+                            return False, f"Package {name} discovered with error: {err}"
+                        status = str(item.get("status") or item.get("state") or "").lower()
+                        if status and any(
+                            neg in status
+                            for neg in (
+                                "disabled",
+                                "error",
+                                "failed",
+                                "inactive",
+                                "off",
+                                "blocked",
+                                "not found",
+                                "broken",
+                                "unload",
+                            )
+                        ):
+                            return False, f"Package {name} discovered but in {status} state"
+                        return True, f"Discovered expected package {name!r} via structured host JSON"
+                elif isinstance(item, str) and item in (expected_package, expected_skill):
+                    return True, f"Discovered expected skill {item!r} via structured host JSON list"
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -1015,35 +1048,74 @@ def _direct_native_discovery(
 
 
 def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
-    """Extract full multi-line entry block starting at line_idx in a text listing (#295)."""
-    if line_idx >= len(lines):
+    """Extract full multi-line entry block containing line_idx in a text listing (#295)."""
+    if line_idx >= len(lines) or line_idx < 0:
         return ""
-    record_lines = [lines[line_idx]]
-    base_line = lines[line_idx]
+
+    bullet_re = re.compile(r"^(?:[-*•]|\d+\.)\s+")
+    header_re = re.compile(r"^(?:package|plugin|skill|extension|name|id)\s*:", re.IGNORECASE)
+
+    start = line_idx
+    target_line = lines[line_idx]
+    target_indent = len(target_line) - len(target_line.lstrip())
+    target_is_bullet = bool(bullet_re.match(target_line.lstrip()))
+
+    if not target_is_bullet and target_indent == 0:
+        curr = line_idx
+        while curr > 0:
+            prev = lines[curr - 1]
+            prev_stripped = prev.strip()
+            if not prev_stripped:
+                break
+            prev_indent = len(prev) - len(prev.lstrip())
+            prev_is_bullet = bool(bullet_re.match(prev.lstrip()))
+            if prev_is_bullet:
+                break
+            elif prev_indent == 0:
+                if header_re.match(prev_stripped) and header_re.match(target_line.strip()):
+                    break
+                start = curr - 1
+                curr -= 1
+            else:
+                break
+    elif not target_is_bullet and target_indent > 0:
+        curr = line_idx
+        while curr > 0:
+            prev = lines[curr - 1]
+            prev_stripped = prev.strip()
+            if not prev_stripped:
+                break
+            prev_indent = len(prev) - len(prev.lstrip())
+            prev_is_bullet = bool(bullet_re.match(prev.lstrip()))
+            if prev_is_bullet and target_indent > prev_indent:
+                start = curr - 1
+                break
+            break
+
+    base_line = lines[start]
     base_indent = len(base_line) - len(base_line.lstrip())
+    is_bullet = bool(bullet_re.match(base_line.lstrip()))
 
-    # Determine if base line is a list bullet (e.g. "- ", "* ", "1. ")
-    stripped = base_line.lstrip()
-    is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", stripped))
-
-    for j in range(line_idx + 1, len(lines)):
+    record_lines = [lines[start]]
+    for j in range(start + 1, len(lines)):
         next_line = lines[j]
         next_stripped = next_line.strip()
         if not next_stripped:
             break
         next_indent = len(next_line) - len(next_line.lstrip())
-        next_is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", next_stripped))
-
-        # Stop if we hit a new item at the same or lesser indentation, or a new bullet
-        if next_is_bullet:
+        next_is_bullet = bool(bullet_re.match(next_stripped))
+        if next_is_bullet and j > start:
             break
-        if not is_bullet and next_indent <= base_indent:
-            break
-        if is_bullet and next_indent <= base_indent:
-            break
-
+        if is_bullet:
+            if next_indent <= base_indent:
+                break
+        else:
+            if base_indent > 0 and next_indent <= base_indent:
+                break
+            if base_indent == 0 and next_indent == 0:
+                if header_re.match(next_stripped) and j > line_idx:
+                    break
         record_lines.append(next_line)
-
     return "\n".join(record_lines)
 
 
@@ -1071,10 +1143,11 @@ def _extract_markdown_recovered_content(block: str) -> str:
 
     for line in lines:
         stripped = line.strip()
-        if content_heading_re.match(stripped):
+        header_text = stripped.lstrip("> ").strip()
+        if content_heading_re.match(header_text):
             in_content_section = True
             continue
-        elif stop_heading_re.match(stripped):
+        elif stop_heading_re.match(header_text):
             in_content_section = False
             continue
 
@@ -1123,6 +1196,9 @@ def evaluate_explicit_activation(
             error=f"exit_code_{returncode}",
         )
         return False, obs
+
+    stdout = strip_ansi(stdout)
+    stderr = strip_ansi(stderr)
 
     auth_patterns = (
         r"\b(?:re-?)?authentication required\b",
@@ -1313,6 +1389,9 @@ def evaluate_explicit_activation(
                 re.search(r">\s*\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*", block_lower)
                 or re.search(r"###\s+(?:user|assistant|tool)\b", block_lower)
                 or re.search(r"\[\d+\s+(?:user|assistant|tool)\]", block_lower)
+                or "### latest explicit user request" in block_lower
+                or "### latest assistant message" in block_lower
+                or "### latest recorded action" in block_lower
             )
             if not has_turn_headers:
                 continue
@@ -1325,7 +1404,10 @@ def evaluate_explicit_activation(
             src_match = re.search(r"(?i)(?:>\s*-\s*)?source\s*:\s*[`'\"]?([a-zA-Z0-9_-]+)[`'\"]?", block)
             if src_match:
                 extracted_source = src_match.group(1).strip("` ")
-            sess_match = re.search(r"(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*[`'\"]?([a-f0-9-]{36})[`'\"]?", block)
+            sess_match = re.search(
+                r"(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*[`'\"]?([a-zA-Z0-9_.:-]+)[`'\"]?",
+                block,
+            )
             if sess_match:
                 extracted_session = sess_match.group(1).strip("` ")
 
@@ -1599,24 +1681,6 @@ def collect_local_discovery_evidence(
                 reason=sanitize_evidence_text(f"Blocked prerequisite: discovery command execution failed: {exc}"),
             )
 
-        combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
-        # Check for authentication or prerequisite blocks
-        auth_tokens = ("auth", "login", "api key", "unauthorized", "sign in", "token", "permission")
-        if any(tok in combined_err for tok in auth_tokens):
-            return NativeEvidenceRecord(
-                host=host,
-                scope=SCOPE_LOCAL_DISCOVERY,
-                state=STATE_NOT_RUN,
-                artifact_file=artifact_name,
-                artifact_sha256=artifact_sha,
-                identity_sha256=identity_hash,
-                recorded_at=current_iso_timestamp(),
-                host_version=host_ver,
-                operator=operator,
-                ci_run_url=ci_run_url,
-                reason="Blocked prerequisite: authentication or credentials required for host discovery",
-            )
-
         unsupported_tokens = (
             "unknown command",
             "unrecognized command",
@@ -1624,6 +1688,7 @@ def collect_local_discovery_evidence(
             "flag provided but not defined",
             "is not a kimi command",
         )
+        combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
         if any(tok in combined_err for tok in unsupported_tokens):
             return NativeEvidenceRecord(
                 host=host,
@@ -1666,6 +1731,29 @@ def collect_local_discovery_evidence(
             host=host,
         )
         if not passed:
+            auth_patterns = (
+                r"\b(?:re-?)?authentication required\b",
+                r"\b(?:re-?)?authenticate\b",
+                r"\b(?:not logged in|login required)\b",
+                r"\bplease (?:log ?in|sign in)\b",
+                r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
+                r"\bunauthorized(?:\:|\b)",
+            )
+            diag_text = f"{proc.stderr}\n{proc.stdout}".lower()
+            if any(re.search(pat, diag_text) for pat in auth_patterns):
+                return NativeEvidenceRecord(
+                    host=host,
+                    scope=SCOPE_LOCAL_DISCOVERY,
+                    state=STATE_NOT_RUN,
+                    artifact_file=artifact_name,
+                    artifact_sha256=artifact_sha,
+                    identity_sha256=identity_hash,
+                    recorded_at=current_iso_timestamp(),
+                    host_version=host_ver,
+                    operator=operator,
+                    ci_run_url=ci_run_url,
+                    reason="Blocked prerequisite: authentication or credentials required for host discovery",
+                )
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_LOCAL_DISCOVERY,
@@ -1980,22 +2068,6 @@ def collect_explicit_activation_evidence(
             )
 
         combined = f"{proc.stdout}\n{proc.stderr}".lower()
-        auth_tokens = ("auth", "login", "api key", "unauthorized", "sign in", "token", "permission")
-        if any(tok in combined for tok in auth_tokens):
-            return NativeEvidenceRecord(
-                host=host,
-                scope=SCOPE_EXPLICIT_ACTIVATION,
-                state=STATE_NOT_RUN,
-                artifact_file=artifact_name,
-                artifact_sha256=artifact_sha,
-                identity_sha256=identity_hash,
-                recorded_at=current_iso_timestamp(),
-                host_version=host_ver,
-                operator=operator,
-                ci_run_url=ci_run_url,
-                reason="Blocked prerequisite: authentication or credentials required for host activation",
-            )
-
         unsupported_tokens = (
             "unknown command",
             "unrecognized command",
@@ -2031,6 +2103,25 @@ def collect_explicit_activation_evidence(
         )
 
         if not passed:
+            if obs.error == "auth_required":
+                return NativeEvidenceRecord(
+                    host=host,
+                    scope=SCOPE_EXPLICIT_ACTIVATION,
+                    state=STATE_NOT_RUN,
+                    artifact_file=artifact_name,
+                    artifact_sha256=artifact_sha,
+                    identity_sha256=identity_hash,
+                    recorded_at=current_iso_timestamp(),
+                    host_version=host_ver,
+                    operator=operator,
+                    ci_run_url=ci_run_url,
+                    reason="Blocked prerequisite: authentication or credentials required for host activation",
+                    provenance={
+                        "command": [sanitize_evidence_text(c) for c in cmd],
+                        "error": obs.error,
+                        "details": obs.details,
+                    },
+                )
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_EXPLICIT_ACTIVATION,
