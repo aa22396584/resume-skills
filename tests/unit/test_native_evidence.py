@@ -1548,6 +1548,45 @@ Execution completed successfully.
         self.assertTrue(ok, f"Expected descriptive metadata with negative words to pass: {reason}")
         self.assertIn("portable-resume", reason)
 
+        # 24. Positive no-error diagnostics pass while boolean false markers reject (#295, Codex comment 3965696832)
+        health_no_errors = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Health: no errors\n"
+            "  Status: active"
+        )
+        ok, reason = _direct_native_discovery(health_no_errors)
+        self.assertTrue(ok, f"Expected Health: no errors to pass: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        diagnostic_no_issues = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Diagnostic: no issues found\n"
+            "  Status: active"
+        )
+        ok, reason = _direct_native_discovery(diagnostic_no_issues)
+        self.assertTrue(ok, f"Expected Diagnostic: no issues found to pass: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        enabled_no = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Enabled: no"
+        )
+        ok, reason = _direct_native_discovery(enabled_no)
+        self.assertFalse(ok, f"Expected Enabled: no to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        active_0 = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Active: 0"
+        )
+        ok, reason = _direct_native_discovery(active_0)
+        self.assertFalse(ok, f"Expected Active: 0 to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"

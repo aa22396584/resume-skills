@@ -1109,8 +1109,11 @@ def _direct_native_discovery(
                 filtered_lines.append((line, False))
 
             negative_field_patterns = (
-                r"\b(?:status|state|enabled|active|diagnostic|message|reason|health|result)\s*:\s*(?:disabled|error|failed|inactive|off|blocked|false|no|0)\b",
-                r"\b(?:error|load_error|error_message|diagnostic|message|reason)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid|error)\b",
+                r"\b(?:enabled|active)\s*:\s*(?:disabled|inactive|false|no|0|off|error|failed)\b",
+                r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
+                r"\b(?:health|result)\s*:\s*(?:error|failed|unhealthy|critical|degraded|false|0)\b",
+                r"\b(?:error|load_error|error_message)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid|error)\b",
+                r"\b(?:diagnostic|message|reason)\s*:\s*(?:disabled|failed|invalid)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
@@ -1122,6 +1125,10 @@ def _direct_native_discovery(
 
             for f_line, is_status_attr in filtered_lines:
                 f_line_lower = f_line.lower()
+                # If the line contains an explicit positive indicator like "no errors" or "no issues",
+                # ignore negative checks on this line (#295, Codex comment 3965696832).
+                if re.search(r"\bno\s+(?:errors?|issues?|failures?|problems?)\b", f_line_lower):
+                    continue
                 if any(re.search(pat, f_line_lower) for pat in negative_field_patterns):
                     is_negative = True
                     break
