@@ -1644,6 +1644,43 @@ Execution completed successfully.
         self.assertTrue(ok, f"Expected 'Details: active and operational' to pass: {reason}")
         self.assertIn("portable-resume", reason)
 
+        # 27. Field polarity: boolean false/0 in error fields indicates no error (#295, Codex comment 3966206029)
+        error_false = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Error: false"
+        )
+        ok, reason = _direct_native_discovery(error_false)
+        self.assertTrue(ok, f"Expected 'Error: false' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        error_0 = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Error: 0"
+        )
+        ok, reason = _direct_native_discovery(error_0)
+        self.assertTrue(ok, f"Expected 'Error: 0' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        load_error_false = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Load_error: false"
+        )
+        ok, reason = _direct_native_discovery(load_error_false)
+        self.assertTrue(ok, f"Expected 'Load_error: false' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        error_failed = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Error: failed"
+        )
+        ok, reason = _direct_native_discovery(error_failed)
+        self.assertFalse(ok, f"Expected 'Error: failed' to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"

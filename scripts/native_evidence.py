@@ -1116,9 +1116,14 @@ def _direct_native_discovery(
                 r"disabled|inactive|off|blocked|error|failed|failure|invalid|"
                 r"unhealthy|critical|degraded|cannot|could\s+not"
             )
+            # Distinguish affirmative status fields (where false/0/off is a negative state)
+            # from error/diagnostic fields (where false/0/none indicates absence of error, i.e. positive)
+            # (#295, Codex comment 3966206029).
             negative_field_patterns = (
                 r"\b(?:enabled|active)\s*:\s*(?:disabled|inactive|false|no|0|off|error|failed|invalid)\b",
-                rf"\b(?:status|state|health|result|diagnostic|message|reason|details?|notes?|error|load_error|error_message)\s*:\s*(?:{_STATUS_NEG_WORDS}|false|0)\b",
+                rf"\b(?:status|state|health|result)\s*:\s*(?:{_STATUS_NEG_WORDS}|false|0|no|off)\b",
+                rf"\b(?:diagnostic|message|reason|details?|notes?)\s*:\s*(?:{_STATUS_NEG_WORDS})\b",
+                rf"\b(?:error|load_error|error_message)\s*:\s*(?:{_STATUS_NEG_WORDS})\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
