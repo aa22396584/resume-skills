@@ -168,7 +168,7 @@ qwen extensions install \
 
 ```bash
 grok plugin marketplace add ImL1s/portable-resume-marketplace
-grok plugin install portable-resume@portable-resume-marketplace --trust
+grok plugin install portable-resume --trust
 ```
 
 ### Kimi Code CLI

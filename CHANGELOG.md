@@ -22,10 +22,21 @@
   dispatches by package-surface key, and the release workflow attaches eight
   plugin/marketplace archives.
 - Clean-room brand assets `assets/logo.png` (512×512) and `assets/icon.png`
-  (256×256), rendered by a stdlib-only PNG writer from a geometric design and
-  embedded in the Codex and Grok packages; both files are build inputs of the
-  build identity. Builds fail closed if either asset is missing, non-square, or
+  (256×256), rendered from a geometric design by the committed stdlib-only
+  `scripts/render_brand_assets.py` (`--write` regenerates, `--check` compares
+  the committed pixel data with a fresh render; a packaging test does the
+  same) and embedded in the Codex and Grok packages; both files are build
+  inputs of the build identity. Builds fail closed if either asset is missing,
+  structurally incomplete (chunk CRCs, IEND, inflated size), non-square, or
   below the directory size floor.
+- Package contracts: `grok-plugin`, `codex-marketplace` and
+  `claude-marketplace` record `docs_checked_date` 2026-09-09; `grok-plugin`
+  no longer cites the v0.3.2 native evidence, which covered the retired root
+  `plugin.json` layout. Contract ids stay `-v1` because they are per-bundle
+  (the manifest version pin already rejects archives from other releases).
+- Docs: the Grok Build marketplace install line is `grok plugin install
+  portable-resume --trust` (bare plugin name after `marketplace add`; the
+  `name@marketplace` spelling is parsed by grok 1.0.13 as a git ref).
 - Static website (`site/`: landing, privacy, terms, support) published by the
   new `pages.yml` workflow to <https://iml1s.github.io/resume-skills/>, plus a
   root `SUPPORT.md`.

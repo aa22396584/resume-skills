@@ -7,7 +7,7 @@ directory submission preparation; `v0.4.4` is not tagged or published yet)
 after publishing immutable `v0.4.3`.
 It no longer reuses immutable published `v0.3.4` as the package base. Explicit build/release tooling includes Git
 state plus deterministic registry/source digests. One canonical pre-build pin is
-embedded byte-for-byte in wheel, sdist, all 18 direct-host ZIPs, and all seven
+embedded byte-for-byte in wheel, sdist, all 18 direct-host ZIPs, and all eight
 native package ZIPs; cross-artifact and installed-runtime checks fail closed on
 missing, duplicate, misplaced, malformed, or mismatched identity bytes. Runtime
 lookup uses only the fixed packaged resource and never Git or a build-pin

@@ -30,6 +30,10 @@ from ..snapshot import stable_read_bytes
 
 # Schema of this contracts module itself (bumped when contract fields change).
 PACKAGE_CONTRACTS_SCHEMA = "portable-resume/package-contracts-v1"
+# Contract ids (``<surface>-v1``) are per-bundle, not cross-version handles:
+# ``_common_required_manifest_values`` pins ``version`` to this bundle, so an
+# archive from another release fails its contract on the version pin alone.
+# Layout changes therefore refresh ``docs_checked_date`` rather than bump the id.
 RUNTIME_IDENTITY_RELATIVE = (
     ".portable-resume/runtime/portable_resume/resources/build-identity.json"
 )
@@ -271,6 +275,7 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "claude plugin marketplace add <extracted-dir>; "
             "claude plugin install portable-resume@portable-resume"
         ),
+        docs_checked_date="2026-09-09",
     ),
     "codex-marketplace": PackageContract(
         contract_id="codex-marketplace-v1",
@@ -307,6 +312,7 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "codex plugin marketplace add <extracted-dir>; "
             "codex plugin add portable-resume@portable-resume"
         ),
+        docs_checked_date="2026-09-09",
     ),
     # Plugin root at the archive top level: the skills-only bundle shape that the
     # OpenAI plugin directory accepts as an upload (no marketplace catalog).
@@ -436,6 +442,11 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "grok plugin validate <extracted-dir>; "
             "grok plugin install <extracted-dir> --trust"
         ),
+        # v0.3.2 native evidence covered the root plugin.json layout that this
+        # contract no longer accepts, so no historical reference applies.
+        native_evidence_status="not-run",
+        last_native_evidence_ref=None,
+        docs_checked_date="2026-09-09",
     ),
     "qwen-extension": PackageContract(
         contract_id="qwen-extension-v1",

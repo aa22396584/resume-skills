@@ -18,6 +18,8 @@ from portable_resume.install.catalog import HOST_KEYS
 from portable_resume.registry import enabled_package_keys
 
 REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
 
 class HostPackageBuilderTests(unittest.TestCase):
@@ -384,6 +386,51 @@ class HostPackageBuilderTests(unittest.TestCase):
     def test_committed_brand_assets_meet_directory_size_floors(self) -> None:
         self._assert_square_png((REPO / "assets" / "logo.png").read_bytes(), minimum=256)
         self._assert_square_png((REPO / "assets" / "icon.png").read_bytes(), minimum=48)
+
+    def test_png_validation_rejects_truncated_or_corrupt_assets(self) -> None:
+        from scripts.build_host_packages import _png_dimensions
+
+        logo = (REPO / "assets" / "logo.png").read_bytes()
+        self.assertEqual(_png_dimensions(logo), (512, 512))
+        iend_at = logo.rfind(b"IEND")
+        idat_at = logo.find(b"IDAT")
+        corrupt_idat = bytearray(logo)
+        corrupt_idat[idat_at + 40] ^= 0xFF
+        bad_crc = bytearray(logo)
+        bad_crc[-1] ^= 0x01  # last byte is part of the IEND CRC
+        cases = {
+            "signature": b"\x89PNX" + logo[4:],
+            "truncated before IEND": logo[: iend_at - 4],
+            "truncated mid-IDAT": logo[: idat_at + 100],
+            "corrupt IDAT byte (CRC mismatch)": bytes(corrupt_idat),
+            "bad IEND CRC": bytes(bad_crc),
+            "trailing bytes": logo + b"\x00",
+            "header only": logo[:33],
+        }
+        for label, data in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    _png_dimensions(data)
+
+    def test_render_brand_assets_reproduces_committed_pixels(self) -> None:
+        """The committed PNGs decode to exactly what scripts/render_brand_assets.py renders.
+
+        Pixel data is compared rather than compressed bytes because deflate
+        output may differ between zlib implementations across CI platforms.
+        """
+
+        from scripts import render_brand_assets
+
+        self.assertEqual(render_brand_assets.check(), [])
+        width, height, raw = render_brand_assets.decode_png(
+            (REPO / "assets" / "icon.png").read_bytes()
+        )
+        self.assertEqual((width, height), (256, 256))
+        self.assertEqual(raw, render_brand_assets.render_raw(256))
+        self.assertEqual(
+            (REPO / "site" / "assets" / "logo-512.png").read_bytes(),
+            (REPO / "assets" / "logo.png").read_bytes(),
+        )
 
     def test_offline_contract_rejects_archive_missing_manifest(self) -> None:
         from portable_resume.install.package_contracts import validate_archive_bytes

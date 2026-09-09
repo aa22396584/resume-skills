@@ -10,13 +10,19 @@ import stat
 import struct
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Any, Mapping
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
+SCRIPTS = Path(__file__).resolve().parent
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+# Sibling scripts (native_evidence.py) import this module as
+# ``scripts.build_host_packages`` to reuse the manifest/brand-asset helpers.
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(1, str(SCRIPTS))
 
 from portable_resume import __version__  # noqa: E402
 from portable_resume.install.catalog import SOURCE_TITLES  # noqa: E402
@@ -76,11 +82,54 @@ def _json_bytes(value: object) -> bytes:
 
 
 def _png_dimensions(data: bytes) -> tuple[int, int]:
-    """Return (width, height) from a PNG IHDR chunk; fail closed otherwise."""
+    """Return (width, height) of a structurally complete PNG; fail closed otherwise.
 
-    if len(data) < 24 or data[:8] != _PNG_SIGNATURE or data[12:16] != b"IHDR":
+    Walks every chunk, verifies each CRC-32, requires IHDR first and IEND last
+    with nothing trailing, and requires the IDAT stream to inflate to exactly
+    ``height * (1 + width * 4)`` bytes for the 8-bit RGBA, non-interlaced
+    images the brand assets use, so a truncated or corrupted asset never ships.
+    """
+
+    if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
         raise ValueError("brand asset is not a PNG image")
-    width, height = struct.unpack(">II", data[16:24])
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset < len(data):
+        if len(data) - offset < 12:
+            raise ValueError("brand asset PNG is truncated")
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        kind = data[offset + 4 : offset + 8]
+        body = data[offset + 8 : offset + 8 + length]
+        crc = data[offset + 8 + length : offset + 12 + length]
+        if len(body) != length or len(crc) != 4:
+            raise ValueError("brand asset PNG is truncated")
+        if struct.unpack(">I", crc)[0] != (zlib.crc32(kind + body) & 0xFFFFFFFF):
+            raise ValueError(f"brand asset PNG chunk {kind!r} has a bad CRC")
+        chunks.append((kind, body))
+        offset += 12 + length
+        if kind == b"IEND":
+            break
+    if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND":
+        raise ValueError("brand asset PNG must start with IHDR and end with IEND")
+    if offset != len(data):
+        raise ValueError("brand asset PNG has trailing bytes after IEND")
+    ihdr = chunks[0][1]
+    if len(ihdr) != 13:
+        raise ValueError("brand asset PNG IHDR is malformed")
+    width, height, depth, color_type, _, _, interlace = struct.unpack(
+        ">IIBBBBB", ihdr
+    )
+    if (depth, color_type, interlace) != (8, 6, 0):
+        raise ValueError("brand asset PNG must be 8-bit RGBA, non-interlaced")
+    idat = b"".join(body for kind, body in chunks if kind == b"IDAT")
+    if not idat:
+        raise ValueError("brand asset PNG has no IDAT data")
+    try:
+        raw = zlib.decompress(idat)
+    except zlib.error as error:
+        raise ValueError("brand asset PNG image data does not inflate") from error
+    if len(raw) != height * (1 + width * 4):
+        raise ValueError("brand asset PNG image data has the wrong size")
     return int(width), int(height)
 
 
