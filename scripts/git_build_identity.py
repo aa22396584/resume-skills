@@ -31,6 +31,9 @@ _ROOT_BUILD_INPUTS = (
     "scripts/build_artifact_identity.py",
     "scripts/build_host_packages.py",
     "scripts/git_build_identity.py",
+    # Brand PNGs embedded in the Codex and Grok host packages.
+    "assets/icon.png",
+    "assets/logo.png",
 )
 _GENERATED_IDENTITY = Path("resources/build-identity.json")
 MAX_BUILD_INPUT_FILE_BYTES = 64 * 1024 * 1024

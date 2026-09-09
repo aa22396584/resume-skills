@@ -515,10 +515,10 @@ If author email rewrite is required and history still contains hotmail, **do not
 
 ```bash
 git filter-branch -f --env-filter '
-export GIT_AUTHOR_EMAIL="41898282+ImL1s@users.noreply.github.com"
-export GIT_COMMITTER_EMAIL="41898282+ImL1s@users.noreply.github.com"
-export GIT_AUTHOR_NAME="ImL1s"
-export GIT_COMMITTER_NAME="ImL1s"
+export GIT_AUTHOR_EMAIL="<maintainer-noreply-email>"
+export GIT_COMMITTER_EMAIL="<maintainer-noreply-email>"
+export GIT_AUTHOR_NAME="<maintainer-name>"
+export GIT_COMMITTER_NAME="<maintainer-name>"
 ' -- --all
 # or git filter-repo equivalent; then force-push with user consent
 ```

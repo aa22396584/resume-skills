@@ -80,7 +80,8 @@ git push origin vX.Y.Z
    registries, and non-package artifact build inputs; set `SOURCE_DATE_EPOCH`
    from that commit.
 5. Build wheel, sdist, one direct host archive per enabled destination
-   (currently 18), and seven plugin/marketplace archives once from that pin.
+   (currently 18), and eight plugin/marketplace archives (including the
+   plugin-root `codex-plugin` bundle) once from that pin.
 6. Require every archive and the host report to contain the exact canonical
    identity bytes at its contracted runtime path, then smoke-install the exact
    wheel and sdist outside the checkout on both OSes with build-pin environment
@@ -126,8 +127,8 @@ separate and require their own rows in
   [Release run 31820997135](https://github.com/ImL1s/resume-skills/actions/runs/31820997135)
   and evidence in [`evidence-summary.md`](evidence-summary.md) (OpenCode live-WAL
   #263, same-version identity upgrade #271, stale setuptools identity refresh
-  #272, Windows install DX #247). Current `main` advances to `0.4.4.dev0` after
-  this tag.
+  #272, Windows install DX #247). Current `main` carries the untagged `0.4.4`
+  release candidate after this tag.
 - `v0.4.2`: **published** from annotated tag at commit
   `3e12823932c2f2c9622cb0d8c10dbfaa4572a8d9`.
   [Release run 31018019355](https://github.com/ImL1s/resume-skills/actions/runs/31018019355)

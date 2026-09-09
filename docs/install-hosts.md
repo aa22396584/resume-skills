@@ -16,13 +16,23 @@ python3 scripts/build_host_packages.py --output-dir host-packages
 
 The package builder creates one `*-<host>-skills.zip` archive per enabled
 destination, including Pi, OpenClaw, goose, Crush, Cline, OpenHands, Hermes,
-GitHub Copilot CLI, Gemini CLI, and Kilo CLI. It also creates seven supported
+GitHub Copilot CLI, Gemini CLI, and Kilo CLI. It also creates eight supported
 plugin/marketplace archives, and `host-packages.json` (`host-packages-v2`) with
 SHA-256 digests, per-artifact offline `contract_id` validation (#27), and honest
 `native_evidence_status=not-run` until host CLI revalidation is recorded.
 Published `0.3.4` release assets remain historical nine-destination archives;
 current `main` builds the registry-derived destination set. Replace `<version>`
 below with the release version.
+
+Starting with `0.4.4`, the Grok archive carries its manifest at
+`.grok-plugin/plugin.json` (no root `plugin.json`), the Codex and Grok archives
+embed the brand PNGs under `assets/`, and an additional
+`portable-resume-<version>-codex-plugin.zip` places the plugin root at the
+archive top level (`.codex-plugin/plugin.json`, `skills/`, `assets/`,
+`LICENSE`, `NOTICE`, `README.md`). That plugin-root bundle is the upload shape
+for the OpenAI plugin directory; it is byte-identical to the
+`plugins/portable-resume/` subtree of the Codex marketplace archive plus the
+three documents.
 
 Download and verify an exact release before installing a plugin:
 
@@ -158,7 +168,7 @@ qwen extensions install \
 
 ```bash
 grok plugin marketplace add ImL1s/portable-resume-marketplace
-grok plugin install portable-resume@portable-resume-marketplace --trust
+grok plugin install portable-resume --trust
 ```
 
 ### Kimi Code CLI

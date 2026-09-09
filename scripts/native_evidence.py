@@ -45,6 +45,16 @@ from portable_resume.install.catalog import HOST_PROFILES, resolve_skill_root
 from portable_resume.install.package_contracts import PACKAGE_CONTRACTS
 from portable_resume.install.render import materialize_plan, package_identity
 
+# The synthetic evidence tree mirrors the shipped archives: reuse the builder's
+# manifest and brand-asset helpers instead of keeping a second copy.
+try:
+    from scripts.build_host_packages import _brand_assets, _common_manifest
+except ModuleNotFoundError:
+    from build_host_packages import (  # type: ignore[no-redef]
+        _brand_assets,
+        _common_manifest,
+    )
+
 EVIDENCE_SCHEMA_VERSION = "portable-resume/native-evidence-v1"
 
 # Closed state enum as prescribed in docs/evidence/native-activation-policy-v1.md
@@ -571,23 +581,17 @@ def materialize_evidence_plan(host: str) -> dict[str, bytes]:
         return plan
 
     evidence_plan = dict(plan)
-    common = {
-        "name": "portable-resume",
-        "version": BUNDLE_VERSION,
-        "description": "Offline, inert context migration across supported coding agents",
-        "author": {"name": "portable-resume-skills contributors"},
-        "license": "Apache-2.0",
-        "homepage": "https://github.com/ImL1s/resume-skills",
-        "repository": "https://github.com/ImL1s/resume-skills",
-        "keywords": ["context-migration", "agent-skills", "offline"],
-    }
+    common = _common_manifest()
     pkg_type = profile.native_package_profile
     if pkg_type == "antigravity-plugin":
         evidence_plan["plugin.json"] = (json.dumps({"name": "portable-resume"}, indent=2) + "\n").encode("utf-8")
         for k, v in plan.items():
             evidence_plan[f"skills/{k}"] = v
     elif pkg_type == "grok-plugin":
-        evidence_plan["plugin.json"] = (json.dumps(common, indent=2) + "\n").encode("utf-8")
+        evidence_plan[".grok-plugin/plugin.json"] = (
+            json.dumps({**common, "skills": "./skills/"}, indent=2) + "\n"
+        ).encode("utf-8")
+        evidence_plan.update(_brand_assets())
         for k, v in plan.items():
             evidence_plan[f"skills/{k}"] = v
     elif pkg_type == "qwen-extension":

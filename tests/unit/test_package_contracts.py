@@ -41,6 +41,7 @@ class PackageContractRegistryTests(unittest.TestCase):
             "antigravity-plugin",
             "claude-marketplace",
             "codex-marketplace",
+            "codex-plugin",
             "cursor-marketplace",
             "grok-plugin",
             "qwen-extension",

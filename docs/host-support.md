@@ -58,7 +58,7 @@ Enabled source adapters and their store families are listed in the root README. 
 | Public marketplace installation | 6/6 compatible hosts pass on v0.3.2; fresh through 0.4.1 reinstall not-run |
 | Visual marketplace picker | Cursor and Kimi pass on v0.3.2; fresh through 0.4.1 picker flow not-run |
 | Other visual Skill pickers | not-run |
-| Vendor-curated directory listing | not submitted |
+| Vendor-curated directory listing | submission prepared in 0.4.4; not yet submitted or listed (tracker in `STATUS.md`) |
 | CI definition | Ubuntu/macOS × Python 3.11–3.14 + windows-latest / Python 3.12 (nt gates + focused product install smoke) |
 | Latest archived remote CI/release | `v0.3.4` pass: release-commit CI and 14-job release run archived |
 | Historical release proof | Earlier releases are archived separately in `evidence-summary.md` |

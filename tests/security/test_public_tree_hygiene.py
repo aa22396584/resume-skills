@@ -7,11 +7,16 @@ from pathlib import Path
 
 
 # Patterns are built so the forbidden literals themselves do not appear as
-# real home paths / mailbox addresses in the public tree.
+# real home paths / mailbox addresses in the public tree. The mailbox pattern
+# is a generic personal-webmail shape (no real address is embedded here).
 FORBIDDEN = [
     re.compile(r"/" + r"Users" + r"/[A-Za-z][A-Za-z0-9._-]{1,32}/"),
     re.compile(r"/" + r"home" + r"/[A-Za-z][A-Za-z0-9._-]{1,32}/"),
-    re.compile(r"aa22306546@" + r"hotmail" + r"\.com"),
+    re.compile(
+        r"[A-Za-z0-9._%+-]+@"
+        + r"(?:hotmail|gmail|outlook|yahoo|icloud|proton|qq|163|126)"
+        + r"\.(?:com|net|me|live)"
+    ),
     re.compile(r"-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"ghp_[A-Za-z0-9]{20,}"),

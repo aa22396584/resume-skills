@@ -57,7 +57,8 @@ SENSITIVE_ALLOWLIST_SK_ONLY = frozenset(
 )
 SK_SHAPE_LABEL = "OpenAI-like secret shape"
 
-SKIP_SUFFIX = {".sqlite", ".vscdb", ".zst", ".pyc", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+# Images are scanned as text too: metadata chunks can carry home paths.
+SKIP_SUFFIX = {".sqlite", ".vscdb", ".zst", ".pyc"}
 
 
 def candidate_files() -> list[str]:
