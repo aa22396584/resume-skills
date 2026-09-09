@@ -129,7 +129,8 @@ continue-on-error behavior are not part of this workflow.
 The independent
 [`portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace)
 publishes host-native catalogs for the six compatible hosts. These commands
-were verified against the public repository for version `0.3.2`:
+were verified against the public repository for version `0.3.2`; the
+Antigravity CLI route below was verified on `agy 1.1.28` on 2026-09-09:
 
 ### Claude Code
 
@@ -171,6 +172,29 @@ grok plugin marketplace add ImL1s/portable-resume-marketplace
 grok plugin install portable-resume --trust
 ```
 
+### Antigravity CLI
+
+Antigravity has no Google-run marketplace, but the Antigravity CLI installs
+the Claude-Code plugin subtree of the marketplace directly from its GitHub
+tree URL:
+
+```bash
+agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume
+```
+
+Readback (agy 1.1.28, isolated `HOME`, 2026-09-09): agy clones the
+marketplace, detects the Claude-Code plugin layout at that subdirectory
+(source reported as `claude-code`) and installs the 17 `resume-*` skills into
+`~/.gemini/config/plugins/portable-resume`. Only that exact tree URL works:
+the marketplace root URL and the upstream `resume-skills` URL fail with
+"could not detect plugin structure", `owner/repo` shorthand and `#subdir`
+fail with "install target must be a directory", and `plugin@marketplace`
+is unavailable because agy only knows its built-in marketplaces (`agy plugin
+link` cannot register a custom URL). The release-attached
+`portable-resume-<version>-antigravity-plugin.zip` remains the offline route
+(`agy plugin validate <extracted-dir>`, then `agy plugin install
+<extracted-dir>`).
+
 ### Kimi Code CLI
 
 Inside Kimi Code CLI, add the catalog:
@@ -182,10 +206,12 @@ Inside Kimi Code CLI, add the catalog:
 Select **Portable Resume**, choose **Trust and install**, then confirm with
 `/plugins list`.
 
-Antigravity and OpenCode do not currently expose a compatible public catalog
-for these inert Skill packages. Use the published release/plugin or direct
-Skill routes below. Network access is used only by the destination host to
-download a package; every bundled reader remains offline.
+Neither Antigravity nor OpenCode has a vendor-run public catalog for these
+inert Skill packages. Antigravity is covered by the CLI tree-URL route above
+(or the release-attached `antigravity-plugin.zip`); OpenCode does not
+currently expose a compatible public catalog, so use the published release or
+direct Skill routes below. Network access is used only by the destination host
+to download a package; every bundled reader remains offline.
 
 ## Direct installer (all hosts)
 
@@ -237,6 +263,10 @@ Each archive contains every enabled `resume-<source>` Skill from the registry.
 - **Codex/Cursor/OpenCode/Kimi:** compatible `.agents/skills` roots may cause duplicate names. Keep one authoritative copy per host and inspect discovery when upgrading.
 - **Qwen:** do not install the source monorepo URL as an extension. Use the
   dedicated public marketplace source or the exact Qwen extension ZIP.
+- **Antigravity:** `agy plugin install` needs the exact marketplace tree URL
+  for `plugins/claude/portable-resume`; the repository root URLs, shorthand
+  and `#subdir` forms are rejected, and no custom marketplace can be
+  registered. No Antigravity vendor directory listing exists.
 - **Kimi:** the destination bundle targets current Kimi Code CLI. Legacy Python Kimi CLI session data is readable as a source, but its plugin format and `~/.kimi` data root are different.
 - **All plugin routes:** plugins can have broader execution authority than Skills. Inspect the archive and verify its published SHA-256 first.
 

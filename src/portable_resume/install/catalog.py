@@ -288,8 +288,9 @@ HOST_PROFILES: dict[str, HostProfile] = {
             "Manual global (cross-flavor): ~/.gemini/config/skills/<name>/",
             "If only Gemini CLI: prefer ~/.gemini/skills/ or ~/.agents/skills/ with --root",
             "Local plugin archive: agy plugin validate <extracted-dir>, then agy plugin install <extracted-dir>",
+            "Marketplace tree URL (agy 1.1.28, 2026-09-09): agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume installs the Claude-Code plugin subtree (17 skills) into ~/.gemini/config/plugins/portable-resume; root URLs, owner/repo shorthand, #subdir and plugin@marketplace are rejected",
             "Manual plugin fallback: .agents/plugins/portable-resume or ~/.gemini/config/plugins/portable-resume",
-            "Antigravity documents bundled/manual plugins, not a public general marketplace; direct skills are the lower-trust default",
+            "Antigravity documents bundled/manual plugins and no Google-run marketplace (no vendor directory); direct skills are the lower-trust default",
         ),
         activation_help=(
             "Mention the skill by name in natural language. `/skills` only lists skills; "

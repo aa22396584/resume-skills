@@ -57,7 +57,10 @@ Claude marketplace `$schema`/`displayName`/`repository`/`license`, Grok
 `portable-resume-<version>-codex-plugin.zip` surface, and the public site
 (<https://iml1s.github.io/resume-skills/> with privacy, terms and support
 pages). A row moves to **submitted** only after the authenticated vendor form
-is sent, and to **listed** only after a public readback.
+is sent, and to **listed** only after a public readback. Antigravity has no
+vendor directory: the Antigravity CLI installs the marketplace's Claude
+subtree directly (verified agy 1.1.28, 2026-09-09, see `install-hosts.md`),
+and the only directory is the community-run GravityHub.
 
 | Directory | Target artifact | Status |
 |---|---|---|
@@ -65,6 +68,7 @@ is sent, and to **listed** only after a public readback.
 | PyPI `portable-resume 0.4.4` | Trusted Publishing in the same run | **published** 2026-09-09 |
 | OpenAI Plugins Directory (Codex / ChatGPT) | release-attached `portable-resume-0.4.4-codex-plugin.zip` (SHA256SUMS verified), plugin id `plugins_6aa170bf904c8191b53ab41832adbf95`, submission `appsub_6aa170bfa9708191828f4c437b8191b6` | **published 2026-09-09** (auto-approved after all 17 skills passed the portal scan); readback: [public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95) shows Version 0.4.4, Category Developer Tools, the 17 skills and the three prompts |
 | xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | [PR #643 "Add portable-resume (0.4.4)"](https://github.com/xai-org/plugin-marketplace/pull/643), entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submitted 2026-09-09; awaiting xAI review** (PR checks Socket ×2 + semgrep success; not merged, **not listed**) |
+| Antigravity (no vendor directory) | community directory [GravityHub](https://www.gravityhub.directory/); install route `agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume` | **submission in progress 2026-09-09** (receipt pending); **not listed** |
 | Claude Code community marketplace | [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit) form: link [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace), path `plugins/claude/portable-resume`, homepage <https://iml1s.github.io/resume-skills/>, license Apache-2.0, privacy <https://iml1s.github.io/resume-skills/privacy/>, platform Claude Code only | **submitted 2026-09-09** ("Plugin submitted for review"); **pending Anthropic review, not listed** |
 
 ## PR #49 AI review disposition (closed for merge)

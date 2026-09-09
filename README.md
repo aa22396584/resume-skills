@@ -123,8 +123,8 @@ codex plugin marketplace add ImL1s/portable-resume-marketplace
 codex plugin add portable-resume@portable-resume
 ```
 
-Verified Cursor, Qwen, Grok, and Kimi commands plus direct Antigravity/OpenCode
-fallbacks are in [`docs/install-hosts.md`](docs/install-hosts.md).
+Verified Cursor, Qwen, Grok, Kimi and Antigravity CLI commands plus the direct
+OpenCode fallback are in [`docs/install-hosts.md`](docs/install-hosts.md).
 
 The lower-level transactional command remains available for previews, custom
 roots, verification, and uninstall:
