@@ -905,7 +905,9 @@ _KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS | _STATUS_A
 _FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
 _POSITIVE_DIAG_RE = re.compile(
-    r"\b(?:no\s+(?:errors?|issues?|failures?|problems?)|0\s+errors?|all\s+checks?\s+passed)\b",
+    r"\b(?:no\s+(?:errors?|issues?|failures?|problems?|faults?|warnings?)|"
+    r"0\s+(?:errors?|issues?|failures?|problems?|faults?|warnings?)|"
+    r"all\s+checks?\s+passed)\b",
     re.IGNORECASE,
 )
 

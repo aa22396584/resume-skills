@@ -1681,6 +1681,43 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected 'Error: failed' to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 28. Zero-count healthy diagnostics (0 issues, 0 failures, 0 problems) are preserved (#295, Codex comment 3966459710)
+        health_0_issues = (
+            "Installed plugins:\n"
+            "- Name: portable-resume\n"
+            "  Health: 0 issues"
+        )
+        ok, reason = _direct_native_discovery(health_0_issues)
+        self.assertTrue(ok, f"Expected 'Health: 0 issues' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        health_0_failures = (
+            "Installed plugins:\n"
+            "- Name: portable-resume\n"
+            "  Health: 0 failures"
+        )
+        ok, reason = _direct_native_discovery(health_0_failures)
+        self.assertTrue(ok, f"Expected 'Health: 0 failures' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        health_0_problems = (
+            "Installed plugins:\n"
+            "- Name: portable-resume\n"
+            "  Health: 0 problems"
+        )
+        ok, reason = _direct_native_discovery(health_0_problems)
+        self.assertTrue(ok, f"Expected 'Health: 0 problems' to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        health_bare_0 = (
+            "Installed plugins:\n"
+            "- Name: portable-resume\n"
+            "  Health: 0"
+        )
+        ok, reason = _direct_native_discovery(health_bare_0)
+        self.assertFalse(ok, f"Expected 'Health: 0' to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
