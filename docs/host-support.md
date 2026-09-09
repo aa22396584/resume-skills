@@ -58,7 +58,7 @@ Enabled source adapters and their store families are listed in the root README. 
 | Public marketplace installation | 6/6 compatible hosts pass on v0.3.2; fresh through 0.4.1 reinstall not-run |
 | Visual marketplace picker | Cursor and Kimi pass on v0.3.2; fresh through 0.4.1 picker flow not-run |
 | Other visual Skill pickers | not-run |
-| Vendor-curated directory listing | OpenAI Plugins Directory published 2026-09-09; xAI catalog PR #643 awaiting review; Claude Code submitted, pending review (tracker in `STATUS.md`) |
+| Vendor-curated directory listing | OpenAI Plugins Directory published 2026-09-09; xAI catalog PR #643 awaiting review; Claude Code submitted, pending review; Antigravity: no Google directory, community GravityHub submission attempted 2026-09-09 and blocked by a directory-side GitHub API 401 — retry later, install today with the agy command (tracker in `STATUS.md`) |
 | CI definition | Ubuntu/macOS × Python 3.11–3.14 + windows-latest / Python 3.12 (nt gates + focused product install smoke) |
 | Latest archived remote CI/release | `v0.3.4` pass: release-commit CI and 14-job release run archived |
 | Historical release proof | Earlier releases are archived separately in `evidence-summary.md` |
