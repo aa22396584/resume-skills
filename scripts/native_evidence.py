@@ -1028,39 +1028,43 @@ def _direct_native_discovery(
             record = _extract_listing_record(lines, line_idx)
             record_lower = record.lower()
 
-            # Explicit status/state field check
-            status_field_m = re.search(
-                r"\b(?:status|state)\s*:\s*([a-zA-Z0-9_-]+)",
-                record_lower,
+            # Filter out descriptive metadata fields (description, notes, summary, etc.)
+            # and their indented continuation lines to avoid false positives on metadata content (#295)
+            filtered_lines: list[str] = []
+            in_desc = False
+            desc_indent = 0
+            desc_field_re = re.compile(
+                r"^\s*(?:description|notes?|summary|details?|comments?|help)\s*:",
+                re.IGNORECASE,
             )
-            explicit_status_is_active = False
-            if status_field_m:
-                s_val = status_field_m.group(1)
-                if s_val in ("active", "enabled", "ok", "running", "true", "loaded", "installed", "ready"):
-                    explicit_status_is_active = True
+            for line in record.splitlines():
+                if not line.strip():
+                    continue
+                line_indent = len(line) - len(line.lstrip())
+                if desc_field_re.match(line):
+                    in_desc = True
+                    desc_indent = line_indent
+                    continue
+                if in_desc:
+                    if line_indent > desc_indent:
+                        continue
+                    else:
+                        in_desc = False
+                filtered_lines.append(line)
 
-            explicit_negative_patterns = (
-                r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
+            filtered_record_lower = "\n".join(filtered_lines).lower()
+
+            negative_patterns = (
+                r"\b(?:status|state|enabled|active)\s*:\s*(?:disabled|error|failed|inactive|off|blocked|false|no|0)\b",
                 r"\berror\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
                 r"[\(\[]\s*(?:disabled|inactive|error|failed|blocked|off)\s*[\)\]]",
+                r"\b(?:disabled|inactive)\b",
             )
 
-            is_negative = any(re.search(neg, record_lower) for neg in explicit_negative_patterns)
-
-            # Bare status words (disabled, inactive) apply when not overridden by explicit active status,
-            # and strictly outside descriptive metadata fields (description, notes, summary) (#295)
-            if not is_negative and not explicit_status_is_active:
-                non_desc_lines = [
-                    l
-                    for l in record.splitlines()
-                    if not re.match(r"^\s*(?:description|notes|summary|details|comment|help)\s*:", l, re.IGNORECASE)
-                ]
-                filtered_record_lower = "\n".join(non_desc_lines).lower()
-                if re.search(r"\b(?:disabled|inactive)\b", filtered_record_lower):
-                    is_negative = True
+            is_negative = any(re.search(neg, filtered_record_lower) for neg in negative_patterns)
 
             if is_negative:
                 has_disabled_match = True

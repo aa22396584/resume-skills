@@ -1293,6 +1293,27 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected disabled package with 'disabled' in description to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 18. Negative enabled fields alongside installed status are rejected (#295, Codex comment 3964901431)
+        bulleted_installed_enabled_disabled = (
+            "- Name: portable-resume\n  Status: installed\n  Enabled: disabled"
+        )
+        ok, reason = _direct_native_discovery(bulleted_installed_enabled_disabled)
+        self.assertFalse(ok, f"Expected bulleted entry with Enabled: disabled to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        key_value_installed_enabled_false = (
+            "Name: portable-resume\nStatus: installed\nEnabled: false"
+        )
+        ok, reason = _direct_native_discovery(key_value_installed_enabled_false)
+        self.assertFalse(ok, f"Expected key-value entry with Enabled: false to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        key_value_installed_enabled_true = (
+            "Name: portable-resume\nStatus: installed\nEnabled: true"
+        )
+        ok, reason = _direct_native_discovery(key_value_installed_enabled_true)
+        self.assertTrue(ok, f"Expected key-value entry with Enabled: true to pass: {reason}")
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
