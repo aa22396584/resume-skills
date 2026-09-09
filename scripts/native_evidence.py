@@ -1051,13 +1051,16 @@ def _direct_native_discovery(
     return False, "Expected package or skill identity not found in host listing"
 
 
+_IDENTITY_FIELDS = frozenset({"package", "plugin", "skill", "extension", "name", "id"})
+_STATUS_FIELDS = frozenset({"status", "state"})
+
+
 def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     """Extract full multi-line entry block containing line_idx in a text listing (#295)."""
     if line_idx >= len(lines) or line_idx < 0:
         return ""
 
     bullet_re = re.compile(r"^(?:[-*•]|\d+\.)\s+")
-    header_re = re.compile(r"^(?:package|plugin|skill|extension|name|id)\s*:", re.IGNORECASE)
     field_continuation_re = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 
     start = line_idx
@@ -1065,8 +1068,9 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     target_stripped = target_line.strip()
     target_indent = len(target_line) - len(target_line.lstrip())
     target_is_bullet = bool(bullet_re.match(target_stripped))
-    target_is_field = bool(field_continuation_re.match(target_stripped))
-    target_is_header = bool(header_re.match(target_stripped))
+    target_field_m = field_continuation_re.match(target_stripped)
+    target_is_field = bool(target_field_m)
+    target_field = target_field_m.group(1).lower() if target_field_m else ""
 
     if not target_is_bullet and target_indent == 0:
         # Backward scan only applies to structured key-value listings
@@ -1081,19 +1085,37 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
                 prev_is_bullet = bool(bullet_re.match(prev_stripped))
                 if prev_is_bullet or prev_indent != 0:
                     break
-                if not field_continuation_re.match(prev_stripped):
+                prev_m = field_continuation_re.match(prev_stripped)
+                if not prev_m:
                     break
-                if target_is_header:
-                    # If target is already a header, stop before any earlier header or its fields
-                    if header_re.match(prev_stripped):
+                prev_field = prev_m.group(1).lower()
+
+                # If prev is an identity field and target is an identity field:
+                if prev_field in _IDENTITY_FIELDS and target_field in _IDENTITY_FIELDS:
+                    if prev_field == target_field:
                         break
-                    earlier_headers = any(
-                        header_re.match(lines[k].strip())
-                        for k in range(0, curr)
-                        if lines[k].strip()
-                    )
-                    if earlier_headers:
-                        break
+                    # If target is an alternate identity field (e.g. ID: after Name:),
+                    # stop if prev was already preceded by another identity field
+                    if curr >= 2:
+                        prev2_m = field_continuation_re.match(lines[curr - 2].strip())
+                        if prev2_m and prev2_m.group(1).lower() in _IDENTITY_FIELDS:
+                            break
+
+                # If prev is a status field (e.g. Status: ...)
+                if prev_field in _STATUS_FIELDS:
+                    # Check whether prev belonged to the preceding entry (e.g. Name: other\nStatus: active\n...)
+                    if curr >= 2:
+                        prev2_m = field_continuation_re.match(lines[curr - 2].strip())
+                        if prev2_m and prev2_m.group(1).lower() in _IDENTITY_FIELDS:
+                            has_status_before_prev2 = False
+                            if curr >= 3:
+                                prev3_m = field_continuation_re.match(lines[curr - 3].strip())
+                                if prev3_m and prev3_m.group(1).lower() in _STATUS_FIELDS:
+                                    has_status_before_prev2 = True
+                            if not has_status_before_prev2:
+                                # prev belongs to lines[curr - 2], not target
+                                break
+
                 start = curr - 1
                 curr -= 1
     elif not target_is_bullet and target_indent > 0:
@@ -1139,20 +1161,25 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
             if base_indent > 0 and next_indent <= base_indent:
                 break
             if base_indent == 0 and next_indent == 0:
-                # Stop if next line is a new package/skill header
-                if header_re.match(next_stripped) and j > line_idx:
-                    break
                 # If base_line is not a key-value field, this is a flat listing row;
                 # treat adjacent same-indent plain rows as separate records.
                 if not base_is_field:
                     break
-                # If base_line is a key-value field, next line must also be a key-value field
                 next_field_m = field_continuation_re.match(next_stripped)
                 if not next_field_m:
                     break
                 next_field = next_field_m.group(1).lower()
+
+                # If the same field repeats after line_idx, a new record has started
                 if next_field in seen_fields and j > line_idx:
                     break
+
+                # If current record already has identity and status, any new identity field starts next record
+                has_identity = bool(seen_fields & _IDENTITY_FIELDS)
+                has_status = bool(seen_fields & _STATUS_FIELDS)
+                if has_identity and has_status and next_field in _IDENTITY_FIELDS and j > line_idx:
+                    break
+
                 seen_fields.add(next_field)
         record_lines.append(next_line)
     return "\n".join(record_lines)

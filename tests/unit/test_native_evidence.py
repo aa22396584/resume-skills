@@ -1157,6 +1157,27 @@ Execution completed successfully.
         ok, reason = _direct_native_discovery(no_blank_lines_disabled)
         self.assertFalse(ok, f"Expected disabled package in unseparated key-value list to be rejected: {reason}")
 
+        # 9. Multiple identity fields within single entry preserve trailing status (#295, Codex review)
+        multi_identity_disabled = "Name: portable-resume\nID: portable-resume\nStatus: disabled"
+        ok, reason = _direct_native_discovery(multi_identity_disabled)
+        self.assertFalse(ok, f"Expected trailing status after multi-identity to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        multi_identity_enabled = (
+            "Name: portable-resume\nID: portable-resume\nStatus: enabled\n"
+            "Name: other-plugin\nID: other\nStatus: disabled"
+        )
+        ok, reason = _direct_native_discovery(multi_identity_enabled)
+        self.assertTrue(ok, f"Expected enabled package in multi-identity list to pass: {reason}")
+
+        # 10. Chained status-first entries without blank lines preserve status (#295, Codex review)
+        chained_status_first = (
+            "Status: active\nName: other-plugin\nStatus: disabled\nName: portable-resume"
+        )
+        ok, reason = _direct_native_discovery(chained_status_first)
+        self.assertFalse(ok, f"Expected chained status-first disabled package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
