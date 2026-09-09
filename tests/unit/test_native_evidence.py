@@ -759,21 +759,39 @@ synthetic request
         self.assertFalse(obs.fixture_read_verified)
         self.assertIn("fixture content", obs.details)
 
-        # 14. Host blocked on authentication diagnostics on stderr or stdout (#296)
+        # 14. Host blocked on authentication / authorization / token-expiry diagnostics on stderr or stdout (#296, Codex comment 3965031967)
         for err_msg in (
             "Authentication required: Please run 'claude login'",
             "API key not found. Set ANTHROPIC_API_KEY to continue.",
             "Error: Not logged in. Please sign in first.",
+            "Authorization failed: access token expired",
+            "OAuth credentials required to access host",
+            "access token expired",
+            "Unauthorized: invalid or missing credentials",
+            "Please log in to continue.",
+            "Please sign in.",
+            "Token revoked",
         ):
+            # On stderr
             ok, obs = evaluate_explicit_activation(
                 "",
                 stderr=err_msg,
                 expected_source="claude",
                 expected_session=expected_session,
             )
-            self.assertFalse(ok)
+            self.assertFalse(ok, f"Expected stderr auth diagnostic {err_msg!r} to be rejected")
             self.assertFalse(obs.host_responded)
             self.assertFalse(obs.runner_execution_observed)
+            self.assertEqual(obs.error, "auth_required")
+
+            # On stdout
+            ok, obs = evaluate_explicit_activation(
+                err_msg,
+                stderr="",
+                expected_source="claude",
+                expected_session=expected_session,
+            )
+            self.assertFalse(ok, f"Expected stdout auth diagnostic {err_msg!r} to be rejected")
             self.assertEqual(obs.error, "auth_required")
 
     def test_explicit_activation_positive_cases(self) -> None:
@@ -1089,6 +1107,26 @@ Execution completed successfully.
                 self.assertTrue(rec.provenance.get("runner_execution_observed"))
                 self.assertTrue(rec.provenance.get("fixture_read_verified"))
 
+            # D. Authorization / OAuth credentials / token expired diagnostics yield STATE_NOT_RUN (#296, Codex comment 3965031967)
+            for auth_diag in (
+                "Authorization failed: access token expired\n",
+                "OAuth credentials required\n",
+                "access token expired\n",
+            ):
+                with mock.patch("subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        subprocess.CompletedProcess(["claude", "--version"], 0, stdout="claude 1.0.0\n", stderr=""),
+                        subprocess.CompletedProcess(
+                            ["claude", "--print", "/resume-claude"],
+                            0,
+                            stdout=auth_diag,
+                            stderr="",
+                        ),
+                    ]
+                    rec = collect_explicit_activation_evidence("claude")
+                    self.assertEqual(rec.state, STATE_NOT_RUN)
+                    self.assertIn("authentication or credentials required", rec.reason)
+
     def test_extract_listing_record_bidirectional_and_unbulleted_blocks(self) -> None:
         """Bidirectional listing extraction rejects disabled entries regardless of line ordering (#295)."""
         # 1. Status follows package in unbulleted key-value block
@@ -1313,6 +1351,34 @@ Execution completed successfully.
         )
         ok, reason = _direct_native_discovery(key_value_installed_enabled_true)
         self.assertTrue(ok, f"Expected key-value entry with Enabled: true to pass: {reason}")
+
+        # 19. Non-status metadata (repository, author, path) containing negative words does not override active status (#295, Codex comment 3965031974)
+        repo_with_disabled_active = (
+            "Name: portable-resume\n"
+            "Repository: https://example.test/disabled-tools\n"
+            "Author: disabled-contributor\n"
+            "Path: /opt/tools/disabled/portable-resume\n"
+            "Status: active"
+        )
+        ok, reason = _direct_native_discovery(repo_with_disabled_active)
+        self.assertTrue(ok, f"Expected active package with negative words in repository/author/path to pass: {reason}")
+
+        repo_with_disabled_no_status = (
+            "Name: portable-resume\n"
+            "Repository: https://example.test/disabled-tools\n"
+            "Path: /opt/tools/disabled/portable-resume"
+        )
+        ok, reason = _direct_native_discovery(repo_with_disabled_no_status)
+        self.assertTrue(ok, f"Expected package with negative words only in repository/path to pass: {reason}")
+
+        repo_with_disabled_but_disabled = (
+            "Name: portable-resume\n"
+            "Repository: https://example.test/disabled-tools\n"
+            "Status: disabled"
+        )
+        ok, reason = _direct_native_discovery(repo_with_disabled_but_disabled)
+        self.assertFalse(ok, f"Expected disabled package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
 
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""

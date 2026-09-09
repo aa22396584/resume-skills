@@ -884,6 +884,36 @@ def strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+_IDENTITY_FIELDS = frozenset({"package", "plugin", "skill", "extension", "name", "id"})
+_STATUS_FIELDS = frozenset({"status", "state"})
+_METADATA_FIELDS = frozenset({
+    "version", "author", "publisher", "description", "homepage",
+    "repository", "url", "path", "location", "source", "type",
+    "license", "scope", "origin", "enabled", "active",
+})
+_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS
+_STATUS_ATTR_FIELDS = frozenset({
+    "status", "state", "enabled", "active", "error", "load_error",
+    "error_message", "health",
+})
+_FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
+_BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
+
+_AUTH_BLOCKED_PATTERNS = (
+    r"\b(?:re-?)?authentication\s+required\b",
+    r"\b(?:re-?)?authenticate\b",
+    r"\b(?:not\s+logged\s+in|login\s+required)\b",
+    r"\bplease\s+(?:log\s*in|sign\s*in)\b",
+    r"\bapi[ _-]?keys?\s+(?:missing|not\s+found|invalid|required|expired)\b",
+    r"\bunauthorized(?:\:|\b)",
+    r"\bauthorization\s+(?:failed|required|error|denied)\b",
+    r"\b(?:oauth\s+)?credentials?\s+(?:required|missing|invalid|expired|not\s+found)\b",
+    r"\b(?:access[ _-])?tokens?\s+(?:expired|revoked|invalid|required|missing)\b",
+    r"\b(?:no|missing)\s+(?:valid\s+)?credentials?\b",
+    r"\bcredentials?\s+(?:have\s+)?expired\b",
+)
+
+
 def _direct_native_discovery(
     stdout: str,
     stderr: str = "",
@@ -1028,43 +1058,68 @@ def _direct_native_discovery(
             record = _extract_listing_record(lines, line_idx)
             record_lower = record.lower()
 
-            # Filter out descriptive metadata fields (description, notes, summary, etc.)
-            # and their indented continuation lines to avoid false positives on metadata content (#295)
-            filtered_lines: list[str] = []
-            in_desc = False
-            desc_indent = 0
-            desc_field_re = re.compile(
-                r"^\s*(?:description|notes?|summary|details?|comments?|help)\s*:",
-                re.IGNORECASE,
-            )
+            # Filter out non-status metadata fields (repository, author, path, url, description, etc.)
+            # and their indented continuation lines to avoid false rejections from metadata content (#295)
+            filtered_lines: list[tuple[str, bool]] = []
+            in_non_status_meta = False
+            meta_indent = 0
+            expected_names = {expected_package.lower(), expected_skill.lower()}
+
             for line in record.splitlines():
                 if not line.strip():
                     continue
                 line_indent = len(line) - len(line.lstrip())
-                if desc_field_re.match(line):
-                    in_desc = True
-                    desc_indent = line_indent
-                    continue
-                if in_desc:
-                    if line_indent > desc_indent:
+                clean_line = _BULLET_RE.sub("", line.strip())
+                m_field = _FIELD_RE.match(clean_line)
+                if m_field:
+                    field_name = m_field.group(1).strip().lower()
+                    if field_name in _STATUS_ATTR_FIELDS:
+                        in_non_status_meta = False
+                        filtered_lines.append((line, True))
+                        continue
+                    elif field_name in _IDENTITY_FIELDS or field_name in expected_names:
+                        in_non_status_meta = False
+                        filtered_lines.append((line, False))
                         continue
                     else:
-                        in_desc = False
-                filtered_lines.append(line)
+                        # Non-status metadata field (repository, author, path, url, description, version, etc.)
+                        in_non_status_meta = True
+                        meta_indent = line_indent
+                        continue
 
-            filtered_record_lower = "\n".join(filtered_lines).lower()
+                if in_non_status_meta:
+                    if line_indent > meta_indent:
+                        continue
+                    else:
+                        in_non_status_meta = False
 
-            negative_patterns = (
+                filtered_lines.append((line, False))
+
+            negative_field_patterns = (
                 r"\b(?:status|state|enabled|active)\s*:\s*(?:disabled|error|failed|inactive|off|blocked|false|no|0)\b",
-                r"\berror\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
+                r"\b(?:error|load_error|error_message)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
-                r"[\(\[]\s*(?:disabled|inactive|error|failed|blocked|off)\s*[\)\]]",
-                r"\b(?:disabled|inactive)\b",
             )
+            bracketed_neg_pattern = r"[\(\[]\s*(?:disabled|inactive|error|failed|blocked|off)\s*[\)\]]"
+            bare_neg_pattern = r"\b(?:disabled|inactive)\b"
 
-            is_negative = any(re.search(neg, filtered_record_lower) for neg in negative_patterns)
+            is_negative = False
+
+            for f_line, is_status_attr in filtered_lines:
+                f_line_lower = f_line.lower()
+                if any(re.search(pat, f_line_lower) for pat in negative_field_patterns):
+                    is_negative = True
+                    break
+                if re.search(bracketed_neg_pattern, f_line_lower):
+                    is_negative = True
+                    break
+                if not is_status_attr:
+                    # On unstructured rows (not structured status fields or filtered metadata), bare words indicate status
+                    if re.search(bare_neg_pattern, f_line_lower):
+                        is_negative = True
+                        break
 
             if is_negative:
                 has_disabled_match = True
@@ -1078,18 +1133,6 @@ def _direct_native_discovery(
             return False, f"Package {token!r} discovered but in disabled/error state"
 
     return False, "Expected package or skill identity not found in host listing"
-
-
-_IDENTITY_FIELDS = frozenset({"package", "plugin", "skill", "extension", "name", "id"})
-_STATUS_FIELDS = frozenset({"status", "state"})
-_METADATA_FIELDS = frozenset({
-    "version", "author", "publisher", "description", "homepage",
-    "repository", "url", "path", "location", "source", "type",
-    "license", "scope", "origin", "enabled", "active",
-})
-_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS
-_FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
-_BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
 
 
 def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
@@ -1322,16 +1365,8 @@ def evaluate_explicit_activation(
     stdout = strip_ansi(stdout)
     stderr = strip_ansi(stderr)
 
-    auth_patterns = (
-        r"\b(?:re-?)?authentication required\b",
-        r"\b(?:re-?)?authenticate\b",
-        r"\b(?:not logged in|login required)\b",
-        r"\bplease (?:log ?in|sign in)\b",
-        r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
-        r"\bunauthorized(?:\:|\b)",
-    )
-    err_lower = stderr.lower()
-    if any(re.search(pat, err_lower) for pat in auth_patterns):
+    diag_text = f"{stderr}\n{stdout}".lower()
+    if any(re.search(pat, diag_text) for pat in _AUTH_BLOCKED_PATTERNS):
         obs = ExplicitActivationObservation(
             host_responded=False,
             skill_selected=False,
@@ -1853,16 +1888,8 @@ def collect_local_discovery_evidence(
             host=host,
         )
         if not passed:
-            auth_patterns = (
-                r"\b(?:re-?)?authentication required\b",
-                r"\b(?:re-?)?authenticate\b",
-                r"\b(?:not logged in|login required)\b",
-                r"\bplease (?:log ?in|sign in)\b",
-                r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
-                r"\bunauthorized(?:\:|\b)",
-            )
             diag_text = f"{proc.stderr}\n{proc.stdout}".lower()
-            if any(re.search(pat, diag_text) for pat in auth_patterns):
+            if any(re.search(pat, diag_text) for pat in _AUTH_BLOCKED_PATTERNS):
                 return NativeEvidenceRecord(
                     host=host,
                     scope=SCOPE_LOCAL_DISCOVERY,
