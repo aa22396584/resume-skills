@@ -1028,16 +1028,41 @@ def _direct_native_discovery(
             record = _extract_listing_record(lines, line_idx)
             record_lower = record.lower()
 
-            negative_status_patterns = (
+            # Explicit status/state field check
+            status_field_m = re.search(
+                r"\b(?:status|state)\s*:\s*([a-zA-Z0-9_-]+)",
+                record_lower,
+            )
+            explicit_status_is_active = False
+            if status_field_m:
+                s_val = status_field_m.group(1)
+                if s_val in ("active", "enabled", "ok", "running", "true", "loaded", "installed", "ready"):
+                    explicit_status_is_active = True
+
+            explicit_negative_patterns = (
                 r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
                 r"\berror\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
-                r"\bdisabled\b",
-                r"\binactive\b",
+                r"[\(\[]\s*(?:disabled|inactive|error|failed|blocked|off)\s*[\)\]]",
             )
-            if any(re.search(neg, record_lower) for neg in negative_status_patterns):
+
+            is_negative = any(re.search(neg, record_lower) for neg in explicit_negative_patterns)
+
+            # Bare status words (disabled, inactive) apply when not overridden by explicit active status,
+            # and strictly outside descriptive metadata fields (description, notes, summary) (#295)
+            if not is_negative and not explicit_status_is_active:
+                non_desc_lines = [
+                    l
+                    for l in record.splitlines()
+                    if not re.match(r"^\s*(?:description|notes|summary|details|comment|help)\s*:", l, re.IGNORECASE)
+                ]
+                filtered_record_lower = "\n".join(non_desc_lines).lower()
+                if re.search(r"\b(?:disabled|inactive)\b", filtered_record_lower):
+                    is_negative = True
+
+            if is_negative:
                 has_disabled_match = True
                 continue
             valid_match = True

@@ -1268,6 +1268,31 @@ Execution completed successfully.
         ok, reason = _direct_native_discovery(nested_bullet_adjacent_active)
         self.assertTrue(ok, f"Expected adjacent nested-bullet active entry to pass: {reason}")
 
+        # 17. Descriptive metadata containing bare status words does not override explicit active status (#295, Codex review)
+        desc_with_disabled_active = (
+            "Name: portable-resume\n"
+            "Description: Can inspect disabled extensions and resume sessions\n"
+            "Status: active"
+        )
+        ok, reason = _direct_native_discovery(desc_with_disabled_active)
+        self.assertTrue(ok, f"Expected active package with 'disabled' in description to pass: {reason}")
+
+        desc_with_disabled_no_status = (
+            "Name: portable-resume\n"
+            "Description: Can inspect disabled extensions and resume sessions"
+        )
+        ok, reason = _direct_native_discovery(desc_with_disabled_no_status)
+        self.assertTrue(ok, f"Expected package with 'disabled' only in description to pass: {reason}")
+
+        desc_with_disabled_disabled = (
+            "Name: portable-resume\n"
+            "Description: Can inspect disabled extensions and resume sessions\n"
+            "Status: disabled"
+        )
+        ok, reason = _direct_native_discovery(desc_with_disabled_disabled)
+        self.assertFalse(ok, f"Expected disabled package with 'disabled' in description to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
