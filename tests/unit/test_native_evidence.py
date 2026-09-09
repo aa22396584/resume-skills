@@ -1771,6 +1771,68 @@ Execution completed successfully.
         self.assertTrue(ok, f"Expected blockquoted handoff to verify: {obs.details}")
         self.assertTrue(obs.fixture_read_verified)
 
+        # Zero-turn handoff where recovered user text begins with '### Untrusted' (#296, Codex comment 3966020727)
+        s_untrusted = Session(
+            source="claude",
+            session_id=expected_session,
+            last_user_request="### Untrusted user request containing synthetic request",
+            last_assistant_action="synthetic response",
+            turns=(),
+        )
+        handoff_untrusted = render_session(s_untrusted)
+        ok, obs = run_explicit_activation(
+            handoff_untrusted,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected handoff with '### Untrusted' user request to verify: {obs.details}")
+        self.assertTrue(obs.fixture_read_verified)
+
+        # Blockquoted handoff where recovered user text begins with '### Untrusted'
+        bq_lines = [f"> {line}" if line else ">" for line in handoff_untrusted.splitlines()]
+        ok, obs = run_explicit_activation(
+            "\n".join(bq_lines),
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected blockquoted handoff with '### Untrusted' user request to verify: {obs.details}")
+        self.assertTrue(obs.fixture_read_verified)
+
+        # Multiple handoff blocks where first block contains quoted delimiter-like user request
+        s_other = Session(
+            source="claude",
+            session_id="00000000-0000-0000-0000-000000000000",
+            last_user_request="### Untrusted other request",
+            last_assistant_action="other response",
+            turns=(),
+        )
+        multi_stdout = f"{render_session(s_other)}\n\n{handoff_untrusted}"
+        ok, obs = run_explicit_activation(
+            multi_stdout,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertTrue(ok, f"Expected multiple handoffs with quoted delimiter-like user request to verify: {obs.details}")
+        self.assertTrue(obs.fixture_read_verified)
+
+        # Deeply nested section heading inside fake host text does not establish execution evidence (#296)
+        fake_handoff = (
+            "> Host preamble\n"
+            "> > ### Latest explicit user request\n"
+            "> > synthetic request\n"
+        )
+        ok, obs = evaluate_explicit_activation(
+            fake_handoff,
+            expected_source="claude",
+            expected_session=expected_session,
+            expected_fixture_content=("synthetic request",),
+        )
+        self.assertFalse(ok)
+        self.assertFalse(obs.runner_execution_observed)
+
     def test_fenced_and_embedded_json_discovery(self) -> None:
         """Structured discovery parses markdown-fenced and embedded JSON listings (#295)."""
         # 1. Fenced JSON active

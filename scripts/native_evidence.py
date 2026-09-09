@@ -1385,6 +1385,19 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     return block_lines[rel_idx]
 
 
+def _count_quote_depth(line: str) -> int:
+    """Count leading markdown blockquote depth (> prefix)."""
+    d = 0
+    for ch in line.strip():
+        if ch == ">":
+            d += 1
+        elif ch in (" ", "\t"):
+            continue
+        else:
+            break
+    return d
+
+
 def _extract_markdown_recovered_content(block: str) -> str:
     """Extract recovered conversation content from request/action/turn sections.
 
@@ -1406,17 +1419,6 @@ def _extract_markdown_recovered_content(block: str) -> str:
         r"#\s+portable\s+resume|###\s+untrusted)",
         re.IGNORECASE,
     )
-
-    def _count_quote_depth(l: str) -> int:
-        d = 0
-        for ch in l.strip():
-            if ch == ">":
-                d += 1
-            elif ch in (" ", "\t"):
-                continue
-            else:
-                break
-        return d
 
     # Determine structural heading quote depth (#296, Codex comment 3965487929).
     # In canonical handoffs, document headings appear at base quote depth (typically 0, or 1
@@ -1466,6 +1468,51 @@ def _extract_markdown_recovered_content(block: str) -> str:
                 content_lines.append(stripped)
 
     return " ".join(content_lines)
+
+
+def _split_handoff_blocks(stdout: str) -> list[str]:
+    """Split stdout into distinct handoff blocks based on structural headings and quote depth (#296).
+
+    Distinguishes structural document headings from quoted untrusted content (e.g. '> ### Untrusted')
+    so that quoted user content resembling delimiters does not prematurely split a handoff block
+    (Codex comment 3966020727).
+    """
+    handoff_start_re = re.compile(
+        r"^(?:#\s+portable\s+resume\s+(?:handoff|no\s+match|candidate\s+selection)\b|"
+        r"###\s+untrusted(?:\s+recovered\s+context)?\b)",
+        re.IGNORECASE,
+    )
+    lines = stdout.splitlines(keepends=True)
+    block_starts: list[int] = []
+    current_block_depth: int | None = None
+    char_offset = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            depth = _count_quote_depth(stripped)
+            text_after_quotes = stripped.lstrip("> ").strip()
+            if handoff_start_re.match(text_after_quotes):
+                if current_block_depth is None or depth <= current_block_depth:
+                    block_starts.append(char_offset)
+                    current_block_depth = depth
+        char_offset += len(line)
+
+    if not block_starts:
+        out_lower = stdout.lower()
+        if (
+            "# portable resume handoff" in out_lower
+            or "security boundary:" in out_lower
+            or "### untrusted" in out_lower
+        ):
+            return [stdout]
+        return []
+
+    blocks: list[str] = []
+    for idx, start in enumerate(block_starts):
+        end = block_starts[idx + 1] if idx + 1 < len(block_starts) else len(stdout)
+        blocks.append(stdout[start:end])
+    return blocks
 
 
 def evaluate_explicit_activation(
@@ -1642,25 +1689,7 @@ def evaluate_explicit_activation(
 
     # Trace C: Check for authentic untrusted handoff banner and turn headers
     if not fixture_read_verified:
-        # Split into distinct handoff blocks if multiple are present (#296)
-        handoff_delims = list(
-            re.finditer(
-                r"(?im)^[>\s]*(?:#\s+portable\s+resume\s+handoff|###\s+untrusted\b)",
-                stdout,
-            )
-        )
-        handoff_blocks: list[str] = []
-        if handoff_delims:
-            for idx, m in enumerate(handoff_delims):
-                start = m.start()
-                end = handoff_delims[idx + 1].start() if idx + 1 < len(handoff_delims) else len(stdout)
-                handoff_blocks.append(stdout[start:end])
-        elif (
-            "# portable resume handoff" in out_lower
-            or "security boundary:" in out_lower
-            or "### untrusted" in out_lower
-        ):
-            handoff_blocks.append(stdout)
+        handoff_blocks = _split_handoff_blocks(stdout)
 
         for block in handoff_blocks:
             block_lower = block.lower()
@@ -1680,14 +1709,35 @@ def evaluate_explicit_activation(
             if not has_security_boundary:
                 continue
 
-            has_turn_headers = bool(
-                re.search(r">\s*\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*", block_lower)
-                or re.search(r"###\s+(?:user|assistant|tool)\b", block_lower)
-                or re.search(r"\[\d+\s+(?:user|assistant|tool)\]", block_lower)
-                or "### latest explicit user request" in block_lower
-                or "### latest assistant message" in block_lower
-                or "### latest recorded action" in block_lower
+            # Check that turn headers or structural section headings appear at the block's structural depth
+            # rather than inside nested quoted content (#296, Codex comments 3965487929, 3966020727).
+            first_non_empty = next((l for l in block.splitlines() if l.strip()), "")
+            block_depth = _count_quote_depth(first_non_empty)
+
+            content_heading_re = re.compile(
+                r"^(?:###\s+(?:latest\s+explicit\s+user\s+request|latest\s+assistant\s+message|"
+                r"latest\s+recorded\s+action|bounded\s+transcript\s+evidence|turn\s+transcript|"
+                r"user|assistant|tool)\b)",
+                re.IGNORECASE,
             )
+            turn_marker_re = re.compile(
+                r"^(?:\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*|\[\d+\s+(?:user|assistant|tool)\])",
+                re.IGNORECASE,
+            )
+            has_turn_headers = False
+            for b_line in block.splitlines():
+                b_stripped = b_line.strip()
+                if not b_stripped:
+                    continue
+                b_depth = _count_quote_depth(b_stripped)
+                b_text = b_stripped.lstrip("> ").strip()
+                if b_depth == block_depth and content_heading_re.match(b_text):
+                    has_turn_headers = True
+                    break
+                if (b_depth == block_depth + 1 or b_depth == block_depth) and turn_marker_re.match(b_text):
+                    has_turn_headers = True
+                    break
+
             if not has_turn_headers:
                 continue
 
