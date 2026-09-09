@@ -1112,12 +1112,13 @@ def _direct_native_discovery(
 
                 filtered_lines.append((line, False))
 
+            _STATUS_NEG_WORDS = (
+                r"disabled|inactive|off|blocked|error|failed|failure|invalid|"
+                r"unhealthy|critical|degraded|cannot|could\s+not"
+            )
             negative_field_patterns = (
-                r"\b(?:enabled|active)\s*:\s*(?:disabled|inactive|false|no|0|off|error|failed)\b",
-                r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
-                r"\b(?:health|result)\s*:\s*(?:error|failed|unhealthy|critical|degraded|false|0)\b",
-                r"\b(?:error|load_error|error_message)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid|error)\b",
-                r"\b(?:diagnostic|message|reason)\s*:\s*(?:disabled|failed|invalid)\b",
+                r"\b(?:enabled|active)\s*:\s*(?:disabled|inactive|false|no|0|off|error|failed|invalid)\b",
+                rf"\b(?:status|state|health|result|diagnostic|message|reason|details?|notes?|error|load_error|error_message)\s*:\s*(?:{_STATUS_NEG_WORDS}|false|0)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
@@ -1139,7 +1140,15 @@ def _direct_native_discovery(
                 if re.search(bracketed_neg_pattern, check_line):
                     is_negative = True
                     break
-                if not is_status_attr:
+                if is_status_attr:
+                    # Normalize negative value checks across all recognized status attributes (#295, Codex comment 3965838623)
+                    val_idx = check_line.find(":")
+                    if val_idx >= 0:
+                        field_val = check_line[val_idx + 1:].strip()
+                        if re.search(rf"\b(?:{_STATUS_NEG_WORDS})\b", field_val):
+                            is_negative = True
+                            break
+                else:
                     # On unstructured rows (not structured status fields or filtered metadata), bare words indicate status
                     if re.search(bare_neg_pattern, check_line):
                         is_negative = True

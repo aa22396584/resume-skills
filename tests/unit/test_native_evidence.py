@@ -1598,6 +1598,52 @@ Execution completed successfully.
         self.assertTrue(ok, f"Expected 'portable-resume active no errors' to pass: {reason}")
         self.assertIn("portable-resume", reason)
 
+        # 26. Negative values normalized across all status attributes (#295, Codex comment 3965838623)
+        health_inactive = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Health: inactive"
+        )
+        ok, reason = _direct_native_discovery(health_inactive)
+        self.assertFalse(ok, f"Expected Health: inactive to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        details_disabled = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Details: disabled"
+        )
+        ok, reason = _direct_native_discovery(details_disabled)
+        self.assertFalse(ok, f"Expected Details: disabled to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        message_blocked = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Message: blocked"
+        )
+        ok, reason = _direct_native_discovery(message_blocked)
+        self.assertFalse(ok, f"Expected Message: blocked to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        details_disabled_phrase = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Details: currently disabled by admin"
+        )
+        ok, reason = _direct_native_discovery(details_disabled_phrase)
+        self.assertFalse(ok, f"Expected 'Details: currently disabled by admin' to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        details_active = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Details: active and operational"
+        )
+        ok, reason = _direct_native_discovery(details_active)
+        self.assertTrue(ok, f"Expected 'Details: active and operational' to pass: {reason}")
+        self.assertIn("portable-resume", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
