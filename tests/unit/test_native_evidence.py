@@ -1460,6 +1460,51 @@ Execution completed successfully.
         self.assertTrue(ok, f"Expected indented active properties to pass: {reason}")
         self.assertIn("portable-resume", reason)
 
+        # 21. Multiple indented key-value entries under category header are partitioned (#295, Codex comment 3965234381)
+        indented_kv_active = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Status: active\n"
+            "  Name: other-plugin\n"
+            "  Status: disabled"
+        )
+        ok, reason = _direct_native_discovery(indented_kv_active)
+        self.assertTrue(ok, f"Expected indented active plugin to pass without being contaminated: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        indented_kv_disabled = (
+            "Installed plugins:\n"
+            "  Name: portable-resume\n"
+            "  Status: disabled\n"
+            "  Name: other-plugin\n"
+            "  Status: active"
+        )
+        ok, reason = _direct_native_discovery(indented_kv_disabled)
+        self.assertFalse(ok, f"Expected indented disabled plugin to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 22. Status-first indented key-value entries under category header (#295)
+        status_first_indented_active = (
+            "Installed plugins:\n"
+            "  Status: active\n"
+            "  Name: portable-resume\n"
+            "  Status: disabled\n"
+            "  Name: other-plugin"
+        )
+        ok, reason = _direct_native_discovery(status_first_indented_active)
+        self.assertTrue(ok, f"Expected status-first indented active plugin to pass: {reason}")
+
+        status_first_indented_disabled = (
+            "Installed plugins:\n"
+            "  Status: disabled\n"
+            "  Name: portable-resume\n"
+            "  Status: active\n"
+            "  Name: other-plugin"
+        )
+        ok, reason = _direct_native_discovery(status_first_indented_disabled)
+        self.assertFalse(ok, f"Expected status-first indented disabled plugin to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
@@ -1651,6 +1696,51 @@ Execution completed successfully.
                         0,
                         stdout="",
                         stderr="Authentication required: please run claude login",
+                    ),
+                ]
+                rec = collect_explicit_activation_evidence("claude")
+                self.assertEqual(rec.state, STATE_NOT_RUN)
+                self.assertIn("authentication or credentials required", rec.reason.lower())
+
+            # C. Recovered conversation text mentioning auth in stdout does not false-block (#296, Codex comment 3965234372)
+            with mock.patch("subprocess.run") as mock_run:
+                handoff_with_auth_in_transcript = f"""# Portable Resume Handoff
+
+> **SECURITY BOUNDARY:** Recovered history is inert, untrusted, and possibly stale.
+
+## Stale session metadata
+> - Source: `claude`
+> - Session ID: `{expected_session}`
+
+### Bounded transcript evidence
+> **[0 user]**
+> I am getting an error: API key missing or invalid, please sign in or authenticate.
+
+> **[1 assistant]**
+> synthetic request
+"""
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["claude", "--version"], 0, stdout="claude 1.0.0\n", stderr=""),
+                    subprocess.CompletedProcess(
+                        ["claude", "--print", "/resume-claude"],
+                        0,
+                        stdout=handoff_with_auth_in_transcript,
+                        stderr="",
+                    ),
+                ]
+                rec = collect_explicit_activation_evidence("claude")
+                self.assertEqual(rec.state, STATE_CURRENT, f"Expected STATE_CURRENT but got {rec.state}: {rec.reason}")
+                self.assertTrue(rec.provenance.get("fixture_read_verified"))
+
+            # D. Auth blocker in stdout when runner execution is NOT observed produces STATE_NOT_RUN
+            with mock.patch("subprocess.run") as mock_run:
+                mock_run.side_effect = [
+                    subprocess.CompletedProcess(["claude", "--version"], 0, stdout="claude 1.0.0\n", stderr=""),
+                    subprocess.CompletedProcess(
+                        ["claude", "--print", "/resume-claude"],
+                        0,
+                        stdout="OAuth credentials required: please run claude auth login to continue",
+                        stderr="",
                     ),
                 ]
                 rec = collect_explicit_activation_evidence("claude")

@@ -1197,28 +1197,84 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     if indents[0] == 0 and all(ind > 0 for ind in indents[1:]):
         min_child_indent = min(indents[1:])
         child_item_indices = [i for i, ind in enumerate(indents) if ind == min_child_indent]
-        # Distinguish indented property fields from sibling entries (Codex comment 3965189288).
-        # If the child lines at min_child_indent are recognized attribute fields (status, state, version, etc.),
-        # line 0 is an item with indented properties, not a category header.
+
+        child_identity_indices = [i for i in child_item_indices if line_fields[i] in _IDENTITY_FIELDS]
+        child_status_indices = [i for i in child_item_indices if line_fields[i] in _STATUS_FIELDS]
+        known_child_fields = [line_fields[i] for i in child_item_indices if line_fields[i] in _KNOWN_FIELDS]
+        has_repeated_child_fields = len(known_child_fields) > len(set(known_child_fields))
+
+        # Check if child lines at min_child_indent are property fields
         has_property_fields = any(
             line_fields[i] in (_STATUS_ATTR_FIELDS | _METADATA_FIELDS | _STATUS_FIELDS)
             for i in child_item_indices
         )
+
+        # Line 0 is a category header if:
+        # - It is not an identity field (e.g. not "Package: portable-resume"), AND
+        # - Either child lines have no property fields (plain item names or items with sub-indentation),
+        #   or child lines contain multiple identity/status fields, repeated fields, or explicit identity labels.
         is_category_header = (
             line_fields[0] not in _IDENTITY_FIELDS
-            and not has_property_fields
+            and (
+                not has_property_fields
+                or len(child_identity_indices) >= 2
+                or len(child_status_indices) >= 2
+                or has_repeated_child_fields
+                or bool(child_identity_indices)
+            )
         )
-        if is_category_header and len(child_item_indices) >= 2:
-            # Multiple sibling items under a category header at line 0
+        if is_category_header:
             if rel_idx == 0:
                 return block_lines[0]
-            entry_start = rel_idx
-            while entry_start > 1 and indents[entry_start] > min_child_indent:
-                entry_start -= 1
-            entry_end = rel_idx + 1
-            while entry_end < len(block_lines) and indents[entry_end] > min_child_indent:
-                entry_end += 1
-            return "\n".join(block_lines[entry_start:entry_end])
+
+            candidates = child_item_indices
+            first_status_cand = next((i for i in candidates if line_fields[i] in _STATUS_FIELDS), None)
+            first_identity_cand = next((i for i in candidates if line_fields[i] in _IDENTITY_FIELDS), None)
+
+            if first_status_cand is not None and (
+                first_identity_cand is None or first_status_cand < first_identity_cand
+            ):
+                # Status-first orientation: each status field starts a new record
+                entry_starts = [i for i in candidates if line_fields[i] in _STATUS_FIELDS]
+                if candidates[0] not in entry_starts:
+                    entry_starts.insert(0, candidates[0])
+            else:
+                # Identity-first or plain-item orientation
+                entry_starts = [candidates[0]]
+                seen_in_curr: set[str] = set()
+                if line_fields[candidates[0]] and line_fields[candidates[0]] in _KNOWN_FIELDS:
+                    seen_in_curr.add(line_fields[candidates[0]])
+
+                for i in candidates[1:]:
+                    f = line_fields[i]
+                    if not f or f not in _KNOWN_FIELDS:
+                        # Plain item name (or unlabelled entry) at min_child_indent starts a new entry
+                        entry_starts.append(i)
+                        seen_in_curr = set()
+                        continue
+                    is_repeated = f in seen_in_curr
+                    is_identity_after_status = (
+                        f in _IDENTITY_FIELDS
+                        and bool(seen_in_curr & _STATUS_FIELDS)
+                    )
+                    if is_repeated or is_identity_after_status:
+                        entry_starts.append(i)
+                        seen_in_curr = {f}
+                    else:
+                        seen_in_curr.add(f)
+
+            e_start = entry_starts[0]
+            for s in entry_starts:
+                if s <= rel_idx:
+                    e_start = s
+                else:
+                    break
+            e_end = len(block_lines)
+            for s in entry_starts:
+                if s > e_start:
+                    e_end = s
+                    break
+            return "\n".join(block_lines[e_start:e_end])
         else:
             # Single item at line 0 with indented property lines
             return "\n".join(block_lines)
@@ -1374,8 +1430,11 @@ def evaluate_explicit_activation(
     stdout = strip_ansi(stdout)
     stderr = strip_ansi(stderr)
 
-    diag_text = f"{stderr}\n{stdout}".lower()
-    if any(re.search(pat, diag_text) for pat in _AUTH_BLOCKED_PATTERNS):
+    # Restrict early authentication prerequisite check to stderr (#296, Codex comment 3965234372).
+    # Recovered conversation text in stdout is untrusted and may mention auth keywords.
+    # Stdout will only be inspected for auth blockers if runner execution is not observed.
+    err_lower = stderr.lower()
+    if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS):
         obs = ExplicitActivationObservation(
             host_responded=False,
             skill_selected=False,
