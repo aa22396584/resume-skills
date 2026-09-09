@@ -1587,6 +1587,17 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected Active: 0 to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 25. Flat row with both negative status and positive diagnostic is rejected (#295, Codex comment 3965752017)
+        flat_disabled_no_errors = "portable-resume disabled no errors"
+        ok, reason = _direct_native_discovery(flat_disabled_no_errors)
+        self.assertFalse(ok, f"Expected 'portable-resume disabled no errors' to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        flat_active_no_errors = "portable-resume active no errors"
+        ok, reason = _direct_native_discovery(flat_active_no_errors)
+        self.assertTrue(ok, f"Expected 'portable-resume active no errors' to pass: {reason}")
+        self.assertIn("portable-resume", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"

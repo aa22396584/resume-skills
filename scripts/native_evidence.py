@@ -904,6 +904,10 @@ _DESCRIPTIVE_METADATA_FIELDS = frozenset({
 _KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS | _STATUS_ATTR_FIELDS | _DESCRIPTIVE_METADATA_FIELDS
 _FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
+_POSITIVE_DIAG_RE = re.compile(
+    r"\b(?:no\s+(?:errors?|issues?|failures?|problems?)|0\s+errors?|all\s+checks?\s+passed)\b",
+    re.IGNORECASE,
+)
 
 _AUTH_BLOCKED_PATTERNS = (
     r"\b(?:re-?)?authentication\s+required\b",
@@ -1125,19 +1129,19 @@ def _direct_native_discovery(
 
             for f_line, is_status_attr in filtered_lines:
                 f_line_lower = f_line.lower()
-                # If the line contains an explicit positive indicator like "no errors" or "no issues",
-                # ignore negative checks on this line (#295, Codex comment 3965696832).
-                if re.search(r"\bno\s+(?:errors?|issues?|failures?|problems?)\b", f_line_lower):
-                    continue
-                if any(re.search(pat, f_line_lower) for pat in negative_field_patterns):
+                # Strip positive diagnostic phrases (e.g. "no errors", "no issues") so they do not falsely trigger
+                # error checks, while still allowing other columns on the same row (e.g. "disabled") to be evaluated
+                # (#295, Codex comment 3965752017).
+                check_line = _POSITIVE_DIAG_RE.sub("", f_line_lower)
+                if any(re.search(pat, check_line) for pat in negative_field_patterns):
                     is_negative = True
                     break
-                if re.search(bracketed_neg_pattern, f_line_lower):
+                if re.search(bracketed_neg_pattern, check_line):
                     is_negative = True
                     break
                 if not is_status_attr:
                     # On unstructured rows (not structured status fields or filtered metadata), bare words indicate status
-                    if re.search(bare_neg_pattern, f_line_lower):
+                    if re.search(bare_neg_pattern, check_line):
                         is_negative = True
                         break
 
