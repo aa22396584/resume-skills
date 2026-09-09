@@ -272,7 +272,8 @@ compatible hosts, including Cursor and Kimi picker flows, is recorded for
 v0.3.2; fresh through 0.4.1 host-by-host reinstall remains **not-run**. Other
 visual Skill pickers are not claimed. Vendor-curated directory listings
 (OpenAI Plugins Directory, Claude Code community marketplace, xAI Grok Build
-marketplace): the OpenAI submission was sent on 2026-09-09, the Claude Code and
-xAI submissions are in progress, and nothing is claimed as listed; the listing
-status is tracked in [`docs/STATUS.md`](docs/STATUS.md).
+marketplace): the OpenAI Plugins Directory listing was published on 2026-09-09
+([public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95)),
+the xAI catalog PR is awaiting review, and the Claude Code submission is pending
+review; the listing status is tracked in [`docs/STATUS.md`](docs/STATUS.md).
 Cursor's full bubble graph is not claimed; redaction is not complete DLP.

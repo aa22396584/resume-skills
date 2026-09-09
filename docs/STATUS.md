@@ -31,7 +31,7 @@ actors. The separate optional trusted-zstd reader boundary remains documented in
 | Public marketplace installation | **6/6 compatible hosts pass on v0.3.2**; fresh through **0.4.1** host reinstall **not-run** |
 | Visual marketplace picker | **Cursor and Kimi pass on v0.3.2**; fresh through **0.4.1** picker flow **not-run** |
 | Other visual Skill picker activation | **not-run** |
-| Vendor-curated directory listing | **OpenAI submitted 2026-09-09**; Claude Code and xAI **submission in progress**; **nothing listed yet** — see the listing tracker below |
+| Vendor-curated directory listing | **OpenAI Plugins Directory: published 2026-09-09** ([public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95)); **xAI: catalog PR open, awaiting review**; **Claude Code: submitted, pending Anthropic review** — see the listing tracker below |
 | CI (v0.3.4 release commit @ `fa1344b`) | **pass**: [Ubuntu + macOS × Python 3.11–3.14 + dist smoke](https://github.com/ImL1s/resume-skills/actions/runs/30269684151) |
 | Phase 0 / Milestone N1 | **merged** [PR #49](https://github.com/ImL1s/resume-skills/pull/49) → `7b5192c` |
 | `v0.3.4` release workflow | **pass**: [14 jobs through GitHub Release and PyPI](https://github.com/ImL1s/resume-skills/actions/runs/30269713516) |
@@ -63,9 +63,9 @@ is sent, and to **listed** only after a public readback.
 |---|---|---|
 | GitHub Release `v0.4.4` | [release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738) | **published** 2026-09-09 |
 | PyPI `portable-resume 0.4.4` | Trusted Publishing in the same run | **published** 2026-09-09 |
-| OpenAI Plugins Directory (Codex / ChatGPT) | `portable-resume-0.4.4-codex-plugin.zip` from the `v0.4.4` GitHub Release | **submitted 2026-09-09** (submission `appsub_6aa170bfa9708191828f4c437b8191b6`); vendor review pending, **not listed** |
-| Claude Code community marketplace | [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace) synced to `v0.4.4` at `c07b97c` | **submission in progress**; **not listed** |
-| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | catalog entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submission in progress**; **not listed** |
+| OpenAI Plugins Directory (Codex / ChatGPT) | release-attached `portable-resume-0.4.4-codex-plugin.zip` (SHA256SUMS verified), plugin id `plugins_6aa170bf904c8191b53ab41832adbf95`, submission `appsub_6aa170bfa9708191828f4c437b8191b6` | **published 2026-09-09** (auto-approved after all 17 skills passed the portal scan); readback: [public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95) shows Version 0.4.4, Category Developer Tools, the 17 skills and the three prompts |
+| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | [PR #643 "Add portable-resume (0.4.4)"](https://github.com/xai-org/plugin-marketplace/pull/643), entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submitted 2026-09-09; awaiting xAI review** (PR checks Socket ×2 + semgrep success; not merged, **not listed**) |
+| Claude Code community marketplace | [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit) form: link [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace), path `plugins/claude/portable-resume`, homepage <https://iml1s.github.io/resume-skills/>, license Apache-2.0, privacy <https://iml1s.github.io/resume-skills/privacy/>, platform Claude Code only | **submitted 2026-09-09** ("Plugin submitted for review"); **pending Anthropic review, not listed** |
 
 ## PR #49 AI review disposition (closed for merge)
 
@@ -235,7 +235,7 @@ Codex/multi-CLI merge blockers on [PR #49](https://github.com/ImL1s/resume-skill
 | Public marketplace host install | 6/6 compatible hosts pass on v0.3.2; fresh through 0.4.1 not-run | install rows and `docs/evidence/public-marketplace-v0.3.2.json` |
 | Visual marketplace picker | Cursor and Kimi pass on v0.3.2; fresh through 0.4.1 not-run | interactive selection rows in `docs/host-ui-smoke.md` |
 | Other visual Skill pickers | not-run | per-host interactive picker evidence |
-| Vendor-curated directory listing | OpenAI submitted 2026-09-09; Claude Code / xAI submission in progress; nothing listed | authenticated vendor submission/readback (listing tracker above) |
+| Vendor-curated directory listing | OpenAI published 2026-09-09 (public page readback); xAI PR #643 awaiting review; Claude Code submitted, pending review | authenticated vendor submission/readback (listing tracker above) |
 | Cursor graph completeness | not claimed | upstream schema/recovery work beyond current best effort |
 
 The latest published GitHub release is
