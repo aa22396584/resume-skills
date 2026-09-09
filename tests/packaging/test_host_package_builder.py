@@ -509,6 +509,43 @@ class HostPackageBuilderTests(unittest.TestCase):
             render_brand_assets.decode_png((REPO / "assets" / "logo.png").read_bytes()),
         )
 
+    def test_render_brand_assets_check_rejects_structurally_damaged_copies(self) -> None:
+        """A website copy missing its IEND, or padded after it, must fail --check and decode_png.
+
+        The pixel comparison only runs after the builder's strict validator
+        accepts the file, so truncation cannot slip through as "same pixels".
+        """
+
+        from unittest import mock
+
+        from scripts import render_brand_assets
+
+        relative = "site/assets/logo-512.png"
+        intact = (REPO / relative).read_bytes()
+        self.assertEqual(intact[-12:-4], b"\x00\x00\x00\x00IEND")
+        damaged = {
+            "IEND chunk removed": intact[:-12],
+            "trailing bytes after IEND": intact + b"\x00\x00\x00\x00",
+            "IEND replaced by trailing junk": intact[:-12] + b"junkjunkjunk",
+        }
+        for label, data in damaged.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    render_brand_assets.decode_png(data)
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    target = root / relative
+                    target.parent.mkdir(parents=True)
+                    target.write_bytes(data)
+                    with (
+                        mock.patch.object(render_brand_assets, "REPO", root),
+                        mock.patch.object(render_brand_assets, "ASSETS", {relative: 512}),
+                    ):
+                        problems = render_brand_assets.check()
+                    self.assertEqual(len(problems), 1, problems)
+                    self.assertIn(relative, problems[0])
+                    self.assertIn("undecodable", problems[0])
+
     def test_offline_contract_rejects_archive_missing_manifest(self) -> None:
         from portable_resume.install.package_contracts import validate_archive_bytes
         import io

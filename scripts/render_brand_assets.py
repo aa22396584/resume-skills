@@ -147,33 +147,23 @@ def render(size: int) -> bytes:
 
 
 def decode_png(data: bytes) -> tuple[int, int, bytes]:
-    """Return (width, height, raw scanlines) of an 8-bit RGBA non-interlaced PNG."""
+    """Return (width, height, raw scanlines) of a structurally valid brand PNG.
 
-    if data[:8] != _PNG_SIGNATURE:
-        raise ValueError("not a PNG")
-    offset = 8
-    ihdr: bytes | None = None
-    idat: list[bytes] = []
-    while offset + 12 <= len(data):
-        length = struct.unpack(">I", data[offset : offset + 4])[0]
-        kind = data[offset + 4 : offset + 8]
-        body = data[offset + 8 : offset + 8 + length]
-        crc = struct.unpack(">I", data[offset + 8 + length : offset + 12 + length])[0]
-        if crc != (zlib.crc32(kind + body) & 0xFFFFFFFF):
-            raise ValueError(f"bad CRC in {kind!r}")
-        if kind == b"IHDR":
-            ihdr = body
-        elif kind == b"IDAT":
-            idat.append(body)
-        elif kind == b"IEND":
-            break
-        offset += 12 + length
-    if ihdr is None or len(ihdr) != 13:
-        raise ValueError("missing IHDR")
-    width, height, depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", ihdr)
-    if (depth, color_type, interlace) != (8, 6, 0):
-        raise ValueError("unsupported PNG layout")
-    return int(width), int(height), zlib.decompress(b"".join(idat))
+    Validation is delegated to the builder's strict validator (single IHDR
+    first, empty terminal IEND with no trailing bytes, contiguous IDAT, spec
+    IHDR values, 8-bit RGBA non-interlaced, exact inflated size, scanline
+    filters 0..4), so a truncated or padded file raises ``ValueError`` here
+    exactly as it would fail the host-package build.
+    """
+
+    try:
+        from scripts.build_host_packages import _png_chunks, _png_dimensions
+    except ModuleNotFoundError:
+        from build_host_packages import _png_chunks, _png_dimensions  # type: ignore[no-redef]
+
+    width, height = _png_dimensions(data)
+    idat = b"".join(body for kind, body in _png_chunks(data) if kind == b"IDAT")
+    return width, height, zlib.decompress(idat)
 
 
 def check() -> list[str]:
