@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -148,8 +149,9 @@ class HostPackageBuilderTests(unittest.TestCase):
             "antigravity-plugin": "plugin.json",
             "claude-marketplace": ".claude-plugin/marketplace.json",
             "codex-marketplace": ".agents/plugins/marketplace.json",
+            "codex-plugin": ".codex-plugin/plugin.json",
             "cursor-marketplace": ".cursor-plugin/marketplace.json",
-            "grok-plugin": "plugin.json",
+            "grok-plugin": ".grok-plugin/plugin.json",
             "qwen-extension": "qwen-extension.json",
             "kimi-plugin": "kimi.plugin.json",
         }
@@ -200,6 +202,86 @@ class HostPackageBuilderTests(unittest.TestCase):
                 )
                 self.assertEqual(plugin["skills"], "./skills/")
                 self.assertEqual(plugin["version"], __version__)
+                self.assertEqual(plugin["author"]["url"], "https://github.com/ImL1s")
+                self._assert_directory_interface(plugin["interface"])
+                for asset in ("icon.png", "logo.png"):
+                    self._assert_square_png(
+                        zipped.read(f"plugins/portable-resume/assets/{asset}"),
+                        minimum=48 if asset == "icon.png" else 256,
+                    )
+                codex_plugin_subtree = {
+                    name[len("plugins/portable-resume/") :]: zipped.read(name)
+                    for name in zipped.namelist()
+                    if name.startswith("plugins/portable-resume/")
+                }
+
+            # OpenAI plugin-root bundle: the codex marketplace plugin subtree
+            # lifted to the archive top level plus the repository documents.
+            codex_plugin = output / artifacts["codex-plugin"]["file"]
+            with zipfile.ZipFile(codex_plugin) as zipped:
+                names = set(zipped.namelist())
+                for document in ("LICENSE", "NOTICE", "README.md"):
+                    self.assertEqual(
+                        zipped.read(document),
+                        (REPO / document).read_bytes(),
+                    )
+                self.assertFalse(any(name.startswith("plugins/") for name in names))
+                self.assertFalse(any("marketplace.json" in name for name in names))
+                bundled = {
+                    name: zipped.read(name)
+                    for name in names
+                    if name not in {"LICENSE", "NOTICE", "README.md"}
+                }
+                self.assertEqual(bundled, codex_plugin_subtree)
+                manifest = json.loads(
+                    zipped.read(".codex-plugin/plugin.json").decode("utf-8")
+                )
+                self.assertEqual(manifest["interface"]["composerIcon"], "./assets/icon.png")
+                self.assertEqual(manifest["interface"]["logo"], "./assets/logo.png")
+                self.assertIn("assets/icon.png", names)
+                self.assertIn("assets/logo.png", names)
+
+            claude = output / artifacts["claude-marketplace"]["file"]
+            with zipfile.ZipFile(claude) as zipped:
+                marketplace = json.loads(
+                    zipped.read(".claude-plugin/marketplace.json").decode("utf-8")
+                )
+                self.assertEqual(
+                    marketplace["$schema"],
+                    "https://code.claude.com/schemas/marketplace.json",
+                )
+                self.assertEqual(marketplace["owner"]["url"], "https://github.com/ImL1s")
+                entry = marketplace["plugins"][0]
+                self.assertEqual(entry["source"], "./plugins/portable-resume")
+                self.assertEqual(entry["displayName"], "Portable Resume")
+                self.assertEqual(entry["license"], "Apache-2.0")
+                self.assertEqual(
+                    entry["repository"], "https://github.com/ImL1s/resume-skills"
+                )
+                self.assertEqual(entry["version"], __version__)
+
+            grok = output / artifacts["grok-plugin"]["file"]
+            with zipfile.ZipFile(grok) as zipped:
+                names = set(zipped.namelist())
+                self.assertNotIn("plugin.json", names)
+                manifest = json.loads(
+                    zipped.read(".grok-plugin/plugin.json").decode("utf-8")
+                )
+                self.assertEqual(manifest["skills"], "./skills/")
+                self.assertEqual(manifest["version"], __version__)
+                self.assertEqual(manifest["license"], "Apache-2.0")
+                self.assertEqual(
+                    manifest["repository"], "https://github.com/ImL1s/resume-skills"
+                )
+                self.assertEqual(manifest["author"]["url"], "https://github.com/ImL1s")
+                self.assertIn("assets/icon.png", names)
+                self.assertIn("assets/logo.png", names)
+                self.assertTrue(
+                    any(
+                        name.startswith("skills/") and name.endswith("/SKILL.md")
+                        for name in names
+                    )
+                )
 
             cursor = output / artifacts["cursor-marketplace"]["file"]
             with zipfile.ZipFile(cursor) as zipped:
@@ -265,6 +347,43 @@ class HostPackageBuilderTests(unittest.TestCase):
                         for name in zipped.namelist()
                     )
                 )
+
+    def _assert_square_png(self, data: bytes, *, minimum: int) -> None:
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(data[12:16], b"IHDR")
+        width, height = struct.unpack(">II", data[16:24])
+        self.assertEqual(width, height)
+        self.assertGreaterEqual(width, minimum)
+
+    def _assert_directory_interface(self, interface: dict) -> None:
+        """OpenAI plugin directory ``interface`` block requirements."""
+
+        self.assertEqual(interface["displayName"], "Portable Resume")
+        self.assertLessEqual(len(interface["shortDescription"]), 30)
+        self.assertEqual(interface["developerName"], "ImL1s")
+        self.assertEqual(interface["category"], "Developer Tools")
+        self.assertEqual(interface["capabilities"], ["Interactive", "Read"])
+        site = "https://iml1s.github.io/resume-skills/"
+        self.assertEqual(interface["websiteURL"], site)
+        self.assertEqual(interface["supportURL"], f"{site}support/")
+        self.assertEqual(interface["privacyPolicyURL"], f"{site}privacy/")
+        self.assertEqual(interface["termsOfServiceURL"], f"{site}terms/")
+        prompts = interface["defaultPrompt"]
+        self.assertEqual(len(prompts), 3)
+        self.assertNotIn("$", prompts[0])
+        self.assertTrue(all(isinstance(p, str) and p.strip() for p in prompts))
+        self.assertRegex(interface["brandColor"], r"^#[0-9A-Fa-f]{6}$")
+        long_description = interface["longDescription"]
+        self.assertIn(f"{len(SOURCE_KEYS)} sources", long_description)
+        for phrase in ("never contacts the network", "never modifies the source store",
+                       "no MCP server", "best-effort", "not live session restore"):
+            self.assertIn(phrase, long_description)
+        self.assertEqual(interface["composerIcon"], "./assets/icon.png")
+        self.assertEqual(interface["logo"], "./assets/logo.png")
+
+    def test_committed_brand_assets_meet_directory_size_floors(self) -> None:
+        self._assert_square_png((REPO / "assets" / "logo.png").read_bytes(), minimum=256)
+        self._assert_square_png((REPO / "assets" / "icon.png").read_bytes(), minimum=48)
 
     def test_offline_contract_rejects_archive_missing_manifest(self) -> None:
         from portable_resume.install.package_contracts import validate_archive_bytes

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import stat
+import struct
 import sys
 import zipfile
 from pathlib import Path
@@ -18,6 +19,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from portable_resume import __version__  # noqa: E402
+from portable_resume.install.catalog import SOURCE_TITLES  # noqa: E402
 from portable_resume.install.package_contracts import (  # noqa: E402
     PACKAGE_CONTRACTS_SCHEMA,
     contract_for_package_type,
@@ -29,6 +31,7 @@ from portable_resume.registry import (  # noqa: E402
     PACKAGE_SURFACES,
     enabled_destination_keys,
     enabled_package_keys,
+    enabled_source_keys,
 )
 from build_artifact_identity import (  # noqa: E402
     identity_sha256,
@@ -36,14 +39,111 @@ from build_artifact_identity import (  # noqa: E402
 )
 
 DESCRIPTION = "Offline, inert context migration across supported coding agents"
-AUTHOR = {"name": "portable-resume-skills contributors"}
+AUTHOR = {
+    "name": "portable-resume-skills contributors",
+    "url": "https://github.com/ImL1s",
+}
+DEVELOPER_NAME = "ImL1s"
+DISPLAY_NAME = "Portable Resume"
+REPOSITORY_URL = "https://github.com/ImL1s/resume-skills"
+WEBSITE_URL = "https://iml1s.github.io/resume-skills/"
+BRAND_COLOR = "#0EA5E9"
+# OpenAI plugin directory limit for ``interface.shortDescription``.
+MAX_SHORT_DESCRIPTION_CHARS = 30
+SHORT_DESCRIPTION = "Resume past agent sessions"
+KEYWORDS = ["context-migration", "agent-skills", "offline", "portable-resume"]
+DEFAULT_PROMPTS = (
+    "Resume my last session from this repository as a fresh handoff.",
+    "List my recent local coding-agent sessions for this project and show the latest one.",
+    "Import the context of my previous Claude Code session here without restoring a live process.",
+)
+# Archive-relative brand asset path -> minimum square pixel size required by
+# the directories that display it (logo >= 256, composer icon >= 48).
+BRAND_ASSETS: dict[str, int] = {
+    "assets/logo.png": 256,
+    "assets/icon.png": 48,
+}
+# Plugin-root documents shipped in the standalone OpenAI bundle.
+PLUGIN_ROOT_DOCUMENTS = ("LICENSE", "NOTICE", "README.md")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def _json_bytes(value: object) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
+
+
+def _png_dimensions(data: bytes) -> tuple[int, int]:
+    """Return (width, height) from a PNG IHDR chunk; fail closed otherwise."""
+
+    if len(data) < 24 or data[:8] != _PNG_SIGNATURE or data[12:16] != b"IHDR":
+        raise ValueError("brand asset is not a PNG image")
+    width, height = struct.unpack(">II", data[16:24])
+    return int(width), int(height)
+
+
+def _brand_assets() -> dict[str, bytes]:
+    """Read the committed brand PNGs and enforce the directory size floors."""
+
+    files: dict[str, bytes] = {}
+    for relative, minimum in BRAND_ASSETS.items():
+        path = REPO / relative
+        if not path.is_file():
+            raise ValueError(f"missing brand asset: {relative}")
+        data = path.read_bytes()
+        width, height = _png_dimensions(data)
+        if width != height or width < minimum:
+            raise ValueError(
+                f"brand asset {relative} must be a square PNG of at least "
+                f"{minimum}px, got {width}x{height}"
+            )
+        files[relative] = data
+    return files
+
+
+def _long_description() -> str:
+    sources = sorted(enabled_source_keys())
+    titles = ", ".join(SOURCE_TITLES[key] for key in sources)
+    return (
+        f"{DISPLAY_NAME} migrates bounded context from your previous local "
+        "coding-agent sessions into a fresh session. One resume skill per "
+        f"supported source ({len(sources)} sources: {titles}) reads that "
+        "agent's own on-disk session store, selects the session that matches "
+        "the current working directory, and prints an inert, best-effort "
+        "redacted markdown handoff for you to review before pasting it into "
+        "the new session. Everything runs locally with Python's standard "
+        "library: the bundled reader never contacts the network, never "
+        "invokes the source agent's CLI, never modifies the source store, and "
+        "ships no MCP server, credentials, scheduler or background service. "
+        "Recovered text is marked untrusted and stale, and redaction is "
+        "best-effort rather than complete data-loss prevention. This is "
+        "offline context migration, not live session restore."
+    )
+
+
+def _interface() -> dict[str, Any]:
+    if len(SHORT_DESCRIPTION) > MAX_SHORT_DESCRIPTION_CHARS:
+        raise ValueError("interface.shortDescription exceeds the directory limit")
+    if "$" in DEFAULT_PROMPTS[0]:
+        raise ValueError("the first default prompt must not reference a $skill token")
+    return {
+        "displayName": DISPLAY_NAME,
+        "shortDescription": SHORT_DESCRIPTION,
+        "longDescription": _long_description(),
+        "developerName": DEVELOPER_NAME,
+        "category": "Developer Tools",
+        "capabilities": ["Interactive", "Read"],
+        "websiteURL": WEBSITE_URL,
+        "supportURL": f"{WEBSITE_URL}support/",
+        "privacyPolicyURL": f"{WEBSITE_URL}privacy/",
+        "termsOfServiceURL": f"{WEBSITE_URL}terms/",
+        "defaultPrompt": list(DEFAULT_PROMPTS),
+        "brandColor": BRAND_COLOR,
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png",
+    }
 
 
 def _prefixed_plan(
@@ -58,52 +158,73 @@ def _prefixed_plan(
     }
 
 
-def _plugin_files(
-    host: str,
-    *,
-    identity: Mapping[str, Any],
-) -> tuple[str, dict[str, bytes]] | None:
-    common = {
+def _common_manifest() -> dict[str, Any]:
+    return {
         "name": "portable-resume",
         "version": __version__,
         "description": DESCRIPTION,
         "author": AUTHOR,
         "license": "Apache-2.0",
-        "homepage": "https://github.com/ImL1s/resume-skills",
-        "repository": "https://github.com/ImL1s/resume-skills",
-        "keywords": ["context-migration", "agent-skills", "offline"],
+        "homepage": REPOSITORY_URL,
+        "repository": REPOSITORY_URL,
+        "keywords": list(KEYWORDS),
     }
-    if host == "claude":
+
+
+def _codex_plugin_root(*, identity: Mapping[str, Any]) -> dict[str, bytes]:
+    """Plugin-root tree shared by the Codex marketplace and standalone bundle."""
+
+    files = _prefixed_plan("codex", "skills/", identity=identity)
+    files.update(_brand_assets())
+    files[".codex-plugin/plugin.json"] = _json_bytes(
+        {**_common_manifest(), "skills": "./skills/", "interface": _interface()}
+    )
+    return files
+
+
+def _plugin_files(
+    surface_key: str,
+    *,
+    identity: Mapping[str, Any],
+) -> dict[str, bytes] | None:
+    surface = PACKAGE_SURFACES[surface_key]
+    host = surface.destination
+    common = _common_manifest()
+    if surface_key == "claude-marketplace":
         plugin_root = "plugins/portable-resume/"
         files = _prefixed_plan(host, f"{plugin_root}skills/", identity=identity)
         files[f"{plugin_root}.claude-plugin/plugin.json"] = _json_bytes(common)
         files[".claude-plugin/marketplace.json"] = _json_bytes(
             {
+                "$schema": "https://code.claude.com/schemas/marketplace.json",
                 "name": "portable-resume",
                 "description": DESCRIPTION,
                 "owner": AUTHOR,
                 "plugins": [
                     {
                         "name": "portable-resume",
+                        "displayName": DISPLAY_NAME,
                         "description": DESCRIPTION,
                         "version": __version__,
                         "source": "./plugins/portable-resume",
                         "author": AUTHOR,
+                        "repository": REPOSITORY_URL,
+                        "license": "Apache-2.0",
                     }
                 ],
             }
         )
-        return "claude-marketplace", files
-    if host == "codex":
+        return files
+    if surface_key == "codex-marketplace":
         plugin_root = "plugins/portable-resume/"
-        files = _prefixed_plan(host, f"{plugin_root}skills/", identity=identity)
-        files[f"{plugin_root}.codex-plugin/plugin.json"] = _json_bytes(
-            {**common, "skills": "./skills/"}
-        )
+        files = {
+            f"{plugin_root}{path}": data
+            for path, data in _codex_plugin_root(identity=identity).items()
+        }
         files[".agents/plugins/marketplace.json"] = _json_bytes(
             {
                 "name": "portable-resume",
-                "interface": {"displayName": "Portable Resume"},
+                "interface": {"displayName": DISPLAY_NAME},
                 "plugins": [
                     {
                         "name": "portable-resume",
@@ -120,14 +241,21 @@ def _plugin_files(
                 ],
             }
         )
-        return "codex-marketplace", files
-    if host == "cursor":
+        return files
+    if surface_key == "codex-plugin":
+        # Plugin root at the archive top level: the skills-only bundle shape the
+        # OpenAI plugin directory accepts as an upload.
+        files = _codex_plugin_root(identity=identity)
+        for name in PLUGIN_ROOT_DOCUMENTS:
+            files[name] = (REPO / name).read_bytes()
+        return files
+    if surface_key == "cursor-marketplace":
         plugin_root = "plugins/portable-resume/"
         files = _prefixed_plan(host, f"{plugin_root}skills/", identity=identity)
         files[f"{plugin_root}.cursor-plugin/plugin.json"] = _json_bytes(
             {
                 "name": "portable-resume",
-                "displayName": "Portable Resume",
+                "displayName": DISPLAY_NAME,
                 "version": __version__,
                 "description": DESCRIPTION,
                 "author": AUTHOR,
@@ -154,16 +282,19 @@ def _plugin_files(
                 ],
             }
         )
-        return "cursor-marketplace", files
-    if host == "antigravity":
+        return files
+    if surface_key == "antigravity-plugin":
         files = _prefixed_plan(host, "skills/", identity=identity)
         files["plugin.json"] = _json_bytes({"name": "portable-resume"})
-        return "antigravity-plugin", files
-    if host == "grok":
+        return files
+    if surface_key == "grok-plugin":
         files = _prefixed_plan(host, "skills/", identity=identity)
-        files["plugin.json"] = _json_bytes(common)
-        return "grok-plugin", files
-    if host == "qwen":
+        files.update(_brand_assets())
+        files[".grok-plugin/plugin.json"] = _json_bytes(
+            {**common, "skills": "./skills/"}
+        )
+        return files
+    if surface_key == "qwen-extension":
         files = _prefixed_plan(host, "skills/", identity=identity)
         files["qwen-extension.json"] = _json_bytes(
             {
@@ -173,20 +304,20 @@ def _plugin_files(
                 "skills": "skills",
             }
         )
-        return "qwen-extension", files
-    if host == "kimi":
+        return files
+    if surface_key == "kimi-plugin":
         files = _prefixed_plan(host, "skills/", identity=identity)
         files["kimi.plugin.json"] = _json_bytes(
             {
                 **common,
                 "skills": "./skills/",
                 "interface": {
-                    "displayName": "Portable Resume",
+                    "displayName": DISPLAY_NAME,
                     "shortDescription": "Resume inert local coding-agent context",
                 },
             }
         )
-        return "kimi-plugin", files
+        return files
     return None
 
 
@@ -331,31 +462,26 @@ def build(
         artifacts.append(entry)
     for surface_key in package_keys:
         surface = PACKAGE_SURFACES[surface_key]
-        plugin = _plugin_files(surface.destination, identity=identity)
-        if plugin is None:
+        files = _plugin_files(surface_key, identity=identity)
+        if files is None:
             raise ValueError(f"package surface not buildable: {surface_key}")
-        kind, files = plugin
-        if kind != surface.key:
-            raise ValueError(
-                f"package surface kind mismatch: registry={surface.key} builder={kind}"
-            )
-        name = f"portable-resume-{artifact_version}-{kind}.zip"
+        name = f"portable-resume-{artifact_version}-{surface_key}.zip"
         path = output / name
         digest, meta = _validated_zip(
             path,
             files,
-            package_type=kind,
+            package_type=surface_key,
             expected_identity=identity,
         )
         artifacts.append(
             {
                 "host": surface.destination,
-                "type": kind,
+                "type": surface_key,
                 "package_surface": surface.key,
                 "file": name,
                 "sha256": digest,
                 "members": len(files),
-                "install": contract_for_package_type(kind).install_hint,
+                "install": contract_for_package_type(surface_key).install_hint,
                 **meta,
             }
         )

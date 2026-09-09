@@ -346,6 +346,18 @@ PACKAGE_SURFACES: dict[str, PackageSurface] = {
     for destination, surface_key in sorted(_NATIVE_PACKAGE_BY_DESTINATION.items())
 }
 
+# Additional buildable surfaces that share a destination with its native
+# package profile. The OpenAI plugin directory accepts a skills-only bundle whose
+# archive top level is the plugin root (manifest + skills + assets), not the
+# nested Codex marketplace tree, so it is a distinct package surface.
+PACKAGE_SURFACES["codex-plugin"] = PackageSurface(
+    key="codex-plugin",
+    destination="codex",
+    profile="codex-plugin-v1",
+    buildable=True,
+    status="supported",
+)
+
 
 def source_keys() -> frozenset[str]:
     return frozenset(SOURCE_PROFILES)

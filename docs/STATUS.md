@@ -2,7 +2,9 @@
 
 ## Current release: 0.4.3
 
-Current `main` advances to `0.4.4.dev0` after publishing immutable `v0.4.3`.
+Current `main` carries the untagged `0.4.4` release candidate (vendor-curated
+directory submission preparation; `v0.4.4` is not tagged or published yet)
+after publishing immutable `v0.4.3`.
 It no longer reuses immutable published `v0.3.4` as the package base. Explicit build/release tooling includes Git
 state plus deterministic registry/source digests. One canonical pre-build pin is
 embedded byte-for-byte in wheel, sdist, all 18 direct-host ZIPs, and all seven
@@ -30,7 +32,7 @@ actors. The separate optional trusted-zstd reader boundary remains documented in
 | Public marketplace installation | **6/6 compatible hosts pass on v0.3.2**; fresh through **0.4.1** host reinstall **not-run** |
 | Visual marketplace picker | **Cursor and Kimi pass on v0.3.2**; fresh through **0.4.1** picker flow **not-run** |
 | Other visual Skill picker activation | **not-run** |
-| Vendor-curated directory listing | **not submitted** |
+| Vendor-curated directory listing | **submission prepared in 0.4.4** (manifests, brand assets, plugin-root bundle, public policy pages); **not yet submitted or listed** — see the listing tracker below |
 | CI (v0.3.4 release commit @ `fa1344b`) | **pass**: [Ubuntu + macOS × Python 3.11–3.14 + dist smoke](https://github.com/ImL1s/resume-skills/actions/runs/30269684151) |
 | Phase 0 / Milestone N1 | **merged** [PR #49](https://github.com/ImL1s/resume-skills/pull/49) → `7b5192c` |
 | `v0.3.4` release workflow | **pass**: [14 jobs through GitHub Release and PyPI](https://github.com/ImL1s/resume-skills/actions/runs/30269713516) |
@@ -46,6 +48,23 @@ actors. The separate optional trusted-zstd reader boundary remains documented in
 | OpenCode exact selection + large transcripts (Issue #13) | **Implemented on branch** `program/issue-13-opencode-exact` — SQLite exact-ID before `LIMIT`; show uses `transcript_records` + `LIMIT n+1`; file-store show session-scoped paths; export bound = `source_read_bytes`. Merge/CI/Codex review **pending** parent accept. |
 | OpenCode oversized live WAL (Issue #263) | **Closed** via Phase 1 [PR #269](https://github.com/ImL1s/resume-skills/pull/269) → `fa897ca` and Phase 2 [PR #268](https://github.com/ImL1s/resume-skills/pull/268) → `3ef7ea8`: Darwin/APFS descriptor clone, clone-data-ID binding, pre-materialization private-main unlink, committed-WAL materialization, verified `/dev/fd` private open, identity-bound cleanup, first-entry bounded scratch rejection, and an exact-head proof JSON/checksum pair. Linux, Windows, non-APFS, cross-volume, missing-symbol, kernels without `unlinkat(AT_UNIQUE)`, and other capability-failure paths remain fail-closed `E_SQLITE_LIVE_WAL`. |
 | Codex-native live resume / `codex resume` from hosts | **not claimed** (inert handoff only) |
+
+### Vendor-curated directory listing tracker
+
+Prepared in `0.4.4`: Codex `plugin.json` `interface` block plus `author.url`,
+Claude marketplace `$schema`/`displayName`/`repository`/`license`, Grok
+`.grok-plugin/plugin.json`, brand assets (`assets/logo.png` 512×512,
+`assets/icon.png` 256×256), the plugin-root
+`portable-resume-<version>-codex-plugin.zip` surface, and the public site
+(<https://iml1s.github.io/resume-skills/> with privacy, terms and support
+pages). A row moves to **submitted** only after the authenticated vendor form
+is sent, and to **listed** only after a public readback.
+
+| Directory | Target artifact | Status |
+|---|---|---|
+| OpenAI Plugins Directory (Codex / ChatGPT) | `portable-resume-0.4.4-codex-plugin.zip` from the `v0.4.4` GitHub Release | **not submitted** (requires the published release) |
+| Claude Code community marketplace | [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace) synced to `v0.4.4` | **not submitted** (requires the marketplace sync) |
+| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | catalog entry pinned to a release-synced marketplace commit, `path` = `plugins/grok/portable-resume` | **not submitted** (requires the marketplace sync) |
 
 ## PR #49 AI review disposition (closed for merge)
 
@@ -215,7 +234,7 @@ Codex/multi-CLI merge blockers on [PR #49](https://github.com/ImL1s/resume-skill
 | Public marketplace host install | 6/6 compatible hosts pass on v0.3.2; fresh through 0.4.1 not-run | install rows and `docs/evidence/public-marketplace-v0.3.2.json` |
 | Visual marketplace picker | Cursor and Kimi pass on v0.3.2; fresh through 0.4.1 not-run | interactive selection rows in `docs/host-ui-smoke.md` |
 | Other visual Skill pickers | not-run | per-host interactive picker evidence |
-| Vendor-curated directory listing | not submitted | authenticated vendor submission/readback |
+| Vendor-curated directory listing | submission prepared in 0.4.4; not yet submitted or listed | authenticated vendor submission/readback (listing tracker above) |
 | Cursor graph completeness | not claimed | upstream schema/recovery work beyond current best effort |
 
 The latest published GitHub release is

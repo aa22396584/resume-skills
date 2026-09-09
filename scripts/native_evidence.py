@@ -587,7 +587,9 @@ def materialize_evidence_plan(host: str) -> dict[str, bytes]:
         for k, v in plan.items():
             evidence_plan[f"skills/{k}"] = v
     elif pkg_type == "grok-plugin":
-        evidence_plan["plugin.json"] = (json.dumps(common, indent=2) + "\n").encode("utf-8")
+        evidence_plan[".grok-plugin/plugin.json"] = (
+            json.dumps({**common, "skills": "./skills/"}, indent=2) + "\n"
+        ).encode("utf-8")
         for k, v in plan.items():
             evidence_plan[f"skills/{k}"] = v
     elif pkg_type == "qwen-extension":

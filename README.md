@@ -25,7 +25,8 @@ compatible public marketplace installs, and Cursor/Kimi pickers. Fresh through
 0.4.3 host reinstall/picker flows and Pi/OpenClaw native UI remain **not-run**
 (still not re-run on this tip).
 
-**Current `main` development version:** `0.4.4.dev0`. Explicit build/release
+**Current `main` version:** `0.4.4` release candidate (untagged; `v0.4.4` is
+not published yet). Explicit build/release
 reports add `+g<commit>[.dirty]` while package metadata keeps the PEP 440 base.
 Artifact builds pin one canonical identity before producing bytes. Repository-level
 immutable `v*` tag enforcement remains active ([ruleset `20148806`](https://github.com/ImL1s/resume-skills/rules/20148806)).
@@ -270,5 +271,8 @@ Eight host CLI surfaces have recorded headless slash/name activation evidence;
 Pi native activation remains **not-run**. Public marketplace installation on six
 compatible hosts, including Cursor and Kimi picker flows, is recorded for
 v0.3.2; fresh through 0.4.1 host-by-host reinstall remains **not-run**. Other
-visual Skill pickers and vendor-curated directory listings are not claimed;
+visual Skill pickers are not claimed. Vendor-curated directory listings
+(OpenAI Plugins Directory, Claude Code community marketplace, xAI Grok Build
+marketplace) have their submissions prepared in 0.4.4 but nothing is claimed
+as listed; the listing status is tracked in [`docs/STATUS.md`](docs/STATUS.md).
 Cursor's full bubble graph is not claimed; redaction is not complete DLP.

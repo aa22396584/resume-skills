@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Support, bug reports and security contact for Portable Resume.">
+<meta name="theme-color" content="#0ea5e9">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/site.css">
+<title>Support — Portable Resume</title>
+</head>
+<body>
+<header class="wrap site-head">
+  <a class="brand" href="../"><img src="../assets/logo.svg" alt=""><span>PR/</span> Portable Resume</a>
+  <nav aria-label="Primary"><a href="../">Home</a><a href="../privacy/">Privacy</a><a href="https://github.com/ImL1s/resume-skills">GitHub ↗</a></nav>
+</header>
+<main class="wrap doc">
+  <div class="eyebrow">Help</div>
+  <h1>Support</h1>
+  <p class="updated">Community-supported, best effort</p>
+
+  <h2>Before you file</h2>
+  <ul>
+    <li>Confirm the install: <code>install-resume-skills verify --host &lt;host&gt; --scope global</code> (or <code>--scope project --project "$PWD"</code>) checks the recorded install plan for that host.</li>
+    <li>Confirm the reader: <code>portable-resume self-check --json</code> reports the packaged version and registries without touching any session store.</li>
+    <li>Read the diagnostic. A non-zero exit prints one structured JSON document on stderr; its <code>code</code> is explained in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/diagnostics.md">docs/diagnostics.md</a>. Paths and user data never appear in it.</li>
+    <li>Check the host-specific notes in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/install-hosts.md">docs/install-hosts.md</a>; several hosts also read Claude Code skills, so a skill can appear twice after installing to both roots.</li>
+  </ul>
+
+  <h2>Bug reports and questions</h2>
+  <p>Open an issue at <a href="https://github.com/ImL1s/resume-skills/issues">github.com/ImL1s/resume-skills/issues</a>. Include the host and its version (<code>claude --version</code>, <code>codex --version</code>, <code>grok --version</code>), your OS and Python version, <code>portable-resume --version</code>, the exact command, and the diagnostic JSON. Never paste real transcripts, credentials or absolute home paths; a synthetic fixture from the repository's <code>tests/fixtures</code> tree is the right way to share a reproduction.</p>
+
+  <h2>Security</h2>
+  <p>If you believe the reader can be made to modify a source store, contact the network, execute a source agent's CLI, or leak data past its redaction and bounds, do not open a public issue. Use GitHub's <a href="https://github.com/ImL1s/resume-skills/security/advisories/new">private vulnerability reporting</a> on the repository and follow <a href="https://github.com/ImL1s/resume-skills/blob/main/SECURITY.md">SECURITY.md</a>, which also documents the threat model and the trusted-zstd boundary.</p>
+
+  <h2>Status and roadmap</h2>
+  <p>The done/not-done ledger, including which host checks were re-run on the current release and which remain not-run, is <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/STATUS.md">docs/STATUS.md</a>. Open work is tracked in the repository's <a href="https://github.com/ImL1s/resume-skills/issues">issues</a>.</p>
+</main>
+<footer><div class="wrap footer-grid">
+  <div>Independent community project · Apache-2.0 · not affiliated with any host vendor</div>
+  <div class="footer-links"><a href="../">Home</a><a href="../privacy/">Privacy</a><a href="../terms/">Terms</a></div>
+</div></footer>
+</body>
+</html>

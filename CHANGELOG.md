@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## [0.4.4] — 2026-09-09
+
+- Vendor-curated directory submission preparation (OpenAI Plugins Directory,
+  Claude Code community marketplace, xAI Grok Build marketplace). The Codex
+  `plugin.json` gains `author.url` and the full `interface` block (display
+  name, ≤30-character short description, registry-derived long description,
+  developer name, category, capabilities, website/support/privacy/terms URLs,
+  three default prompts, brand colour, composer icon, logo). The Claude
+  marketplace catalog gains `$schema`, `displayName`, `repository`, `license`
+  and an owner URL. The Grok archive now ships `.grok-plugin/plugin.json`
+  (with `skills`, `license`, `repository`, `homepage`, `author`) instead of a
+  root `plugin.json`; the offline contract and native-evidence plan follow.
+- New `codex-plugin` package surface and contract:
+  `portable-resume-<version>-codex-plugin.zip` is the plugin root at the
+  archive top level (`.codex-plugin/plugin.json`, `skills/`, `assets/`,
+  `LICENSE`, `NOTICE`, `README.md`), byte-identical to the Codex marketplace
+  `plugins/portable-resume/` subtree plus the three documents. The builder now
+  dispatches by package-surface key, and the release workflow attaches eight
+  plugin/marketplace archives.
+- Clean-room brand assets `assets/logo.png` (512×512) and `assets/icon.png`
+  (256×256), rendered by a stdlib-only PNG writer from a geometric design and
+  embedded in the Codex and Grok packages; both files are build inputs of the
+  build identity. Builds fail closed if either asset is missing, non-square, or
+  below the directory size floor.
+- Static website (`site/`: landing, privacy, terms, support) published by the
+  new `pages.yml` workflow to <https://iml1s.github.io/resume-skills/>, plus a
+  root `SUPPORT.md`.
+- Public-tree hygiene: the personal mailbox literal in the hygiene test became
+  a generic personal-webmail pattern, and the open-source-readiness plan uses
+  placeholders for the maintainer identity.
+- Docs: vendor-curated directory rows now read "submission prepared in 0.4.4;
+  not yet submitted or listed", with a listing tracker in `docs/STATUS.md`.
+  Nothing is claimed as listed.
+
 ## [0.4.3] — 2026-08-15
 
 - Installer coordinated shared-root upgrades now key on package identity as
