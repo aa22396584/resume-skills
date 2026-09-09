@@ -1053,136 +1053,152 @@ def _direct_native_discovery(
 
 _IDENTITY_FIELDS = frozenset({"package", "plugin", "skill", "extension", "name", "id"})
 _STATUS_FIELDS = frozenset({"status", "state"})
+_METADATA_FIELDS = frozenset({
+    "version", "author", "publisher", "description", "homepage",
+    "repository", "url", "path", "location", "source", "type",
+    "license", "scope", "origin", "enabled", "active",
+})
+_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS
+_FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
+_BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
 
 
 def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     """Extract full multi-line entry block containing line_idx in a text listing (#295)."""
     if line_idx >= len(lines) or line_idx < 0:
         return ""
+    if not lines[line_idx].strip():
+        return ""
 
-    bullet_re = re.compile(r"^(?:[-*•]|\d+\.)\s+")
-    field_continuation_re = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
+    # 1. Isolate contiguous non-empty block containing line_idx
+    block_start = line_idx
+    while block_start > 0 and lines[block_start - 1].strip():
+        block_start -= 1
 
-    start = line_idx
-    target_line = lines[line_idx]
-    target_stripped = target_line.strip()
-    target_indent = len(target_line) - len(target_line.lstrip())
-    target_is_bullet = bool(bullet_re.match(target_stripped))
-    target_field_m = field_continuation_re.match(target_stripped)
-    target_is_field = bool(target_field_m)
-    target_field = target_field_m.group(1).lower() if target_field_m else ""
+    block_end = line_idx + 1
+    while block_end < len(lines) and lines[block_end].strip():
+        block_end += 1
 
-    if not target_is_bullet and target_indent == 0:
-        # Backward scan only applies to structured key-value listings
-        if target_is_field:
-            curr = line_idx
-            while curr > 0:
-                prev = lines[curr - 1]
-                prev_stripped = prev.strip()
-                if not prev_stripped:
-                    break
-                prev_indent = len(prev) - len(prev.lstrip())
-                prev_is_bullet = bool(bullet_re.match(prev_stripped))
-                if prev_is_bullet or prev_indent != 0:
-                    break
-                prev_m = field_continuation_re.match(prev_stripped)
-                if not prev_m:
-                    break
-                prev_field = prev_m.group(1).lower()
+    block_lines = list(lines[block_start:block_end])
+    rel_idx = line_idx - block_start
 
-                # If prev is an identity field and target is an identity field:
-                if prev_field in _IDENTITY_FIELDS and target_field in _IDENTITY_FIELDS:
-                    if prev_field == target_field:
-                        break
-                    # If target is an alternate identity field (e.g. ID: after Name:),
-                    # stop if prev was already preceded by another identity field
-                    if curr >= 2:
-                        prev2_m = field_continuation_re.match(lines[curr - 2].strip())
-                        if prev2_m and prev2_m.group(1).lower() in _IDENTITY_FIELDS:
-                            break
+    if len(block_lines) == 1:
+        return block_lines[0]
 
-                # If prev is a status field (e.g. Status: ...)
-                if prev_field in _STATUS_FIELDS:
-                    # Check whether prev belonged to the preceding entry (e.g. Name: other\nStatus: active\n...)
-                    if curr >= 2:
-                        prev2_m = field_continuation_re.match(lines[curr - 2].strip())
-                        if prev2_m and prev2_m.group(1).lower() in _IDENTITY_FIELDS:
-                            has_status_before_prev2 = False
-                            if curr >= 3:
-                                prev3_m = field_continuation_re.match(lines[curr - 3].strip())
-                                if prev3_m and prev3_m.group(1).lower() in _STATUS_FIELDS:
-                                    has_status_before_prev2 = True
-                            if not has_status_before_prev2:
-                                # prev belongs to lines[curr - 2], not target
-                                break
-
-                start = curr - 1
-                curr -= 1
-    elif not target_is_bullet and target_indent > 0:
-        curr = line_idx
-        while curr > 0:
-            prev = lines[curr - 1]
-            prev_stripped = prev.strip()
-            if not prev_stripped:
+    # 2. Case A: Bullet lists
+    bullet_indices = [i for i, l in enumerate(block_lines) if _BULLET_RE.match(l.strip())]
+    if bullet_indices:
+        if rel_idx < bullet_indices[0]:
+            return block_lines[rel_idx]
+        b_item_start = bullet_indices[0]
+        for b_idx in bullet_indices:
+            if b_idx <= rel_idx:
+                b_item_start = b_idx
+            else:
                 break
-            prev_indent = len(prev) - len(prev.lstrip())
-            prev_is_bullet = bool(bullet_re.match(prev_stripped))
-            if prev_is_bullet and target_indent > prev_indent:
-                start = curr - 1
+        b_item_end = len(block_lines)
+        for b_idx in bullet_indices:
+            if b_idx > b_item_start:
+                b_item_end = b_idx
                 break
-            break
+        return "\n".join(block_lines[b_item_start:b_item_end])
 
-    base_line = lines[start]
-    base_stripped = base_line.strip()
-    base_indent = len(base_line) - len(base_line.lstrip())
-    is_bullet = bool(bullet_re.match(base_stripped))
-    base_is_field = bool(field_continuation_re.match(base_stripped))
+    indents = [len(l) - len(l.lstrip()) for l in block_lines]
 
-    seen_fields: set[str] = set()
-    if base_is_field:
-        m = field_continuation_re.match(base_stripped)
-        if m:
-            seen_fields.add(m.group(1).lower())
-
-    record_lines = [lines[start]]
-    for j in range(start + 1, len(lines)):
-        next_line = lines[j]
-        next_stripped = next_line.strip()
-        if not next_stripped:
-            break
-        next_indent = len(next_line) - len(next_line.lstrip())
-        next_is_bullet = bool(bullet_re.match(next_stripped))
-        if next_is_bullet and j > start:
-            break
-        if is_bullet:
-            if next_indent <= base_indent:
-                break
+    # 3. Case B: Indented hierarchy under a single header or item name
+    # Line 0 is at indent 0, and ALL other lines (1..N-1) are indented (> 0)
+    if indents[0] == 0 and all(ind > 0 for ind in indents[1:]):
+        min_child_indent = min(indents[1:])
+        child_item_indices = [i for i, ind in enumerate(indents) if ind == min_child_indent]
+        if len(child_item_indices) >= 2:
+            # Multiple sibling items under a category header at line 0
+            if rel_idx == 0:
+                return block_lines[0]
+            entry_start = rel_idx
+            while entry_start > 1 and indents[entry_start] > min_child_indent:
+                entry_start -= 1
+            entry_end = rel_idx + 1
+            while entry_end < len(block_lines) and indents[entry_end] > min_child_indent:
+                entry_end += 1
+            return "\n".join(block_lines[entry_start:entry_end])
         else:
-            if base_indent > 0 and next_indent <= base_indent:
+            # Single item at line 0 with indented property lines
+            return "\n".join(block_lines)
+
+    def _extract_field_name(line: str) -> str | None:
+        m = _FIELD_RE.match(line.strip())
+        return m.group(1).lower() if m else None
+
+    line_fields = [_extract_field_name(l) for l in block_lines]
+
+    # 4. Case C: Indented items under non-attribute keys (e.g. YAML mapping)
+    indent_0_indices = [i for i, ind in enumerate(indents) if ind == 0]
+    if len(indent_0_indices) >= 2:
+        indent_0_known = [line_fields[i] in _KNOWN_FIELDS for i in indent_0_indices]
+        if not all(indent_0_known) and any(
+            idx_0 + 1 < len(block_lines) and indents[idx_0 + 1] > 0 for idx_0 in indent_0_indices
+        ):
+            e_start = indent_0_indices[0]
+            for idx_0 in indent_0_indices:
+                if idx_0 <= rel_idx:
+                    e_start = idx_0
+                else:
+                    break
+            e_end = len(block_lines)
+            for idx_0 in indent_0_indices:
+                if idx_0 > e_start:
+                    e_end = idx_0
+                    break
+            return "\n".join(block_lines[e_start:e_end])
+
+    # 5. Case D: Key-value fields at base indent
+    known_field_indices = [i for i, f in enumerate(line_fields) if f in _KNOWN_FIELDS]
+    if known_field_indices:
+        first_status_idx = next((i for i, f in enumerate(line_fields) if f in _STATUS_FIELDS), None)
+        first_identity_idx = next((i for i, f in enumerate(line_fields) if f in _IDENTITY_FIELDS), None)
+
+        entry_starts = [0]
+        if first_status_idx is not None and (first_identity_idx is None or first_status_idx < first_identity_idx):
+            # Status-first orientation: each status field starts a new record
+            entry_starts = [i for i, f in enumerate(line_fields) if f in _STATUS_FIELDS]
+            if 0 not in entry_starts:
+                entry_starts.insert(0, 0)
+        else:
+            # Identity-first orientation
+            seen_in_curr: set[str] = set()
+            if line_fields[0] and line_fields[0] in _KNOWN_FIELDS:
+                seen_in_curr.add(line_fields[0])
+
+            for i in range(1, len(block_lines)):
+                f = line_fields[i]
+                if not f or f not in _KNOWN_FIELDS:
+                    continue
+                is_repeated = f in seen_in_curr
+                is_identity_after_status = (
+                    f in _IDENTITY_FIELDS
+                    and bool(seen_in_curr & _STATUS_FIELDS)
+                )
+                if is_repeated or is_identity_after_status:
+                    entry_starts.append(i)
+                    seen_in_curr = {f}
+                else:
+                    seen_in_curr.add(f)
+
+        e_start = 0
+        for s in entry_starts:
+            if s <= rel_idx:
+                e_start = s
+            else:
                 break
-            if base_indent == 0 and next_indent == 0:
-                # If base_line is not a key-value field, this is a flat listing row;
-                # treat adjacent same-indent plain rows as separate records.
-                if not base_is_field:
-                    break
-                next_field_m = field_continuation_re.match(next_stripped)
-                if not next_field_m:
-                    break
-                next_field = next_field_m.group(1).lower()
+        e_end = len(block_lines)
+        for s in entry_starts:
+            if s > e_start:
+                e_end = s
+                break
+        return "\n".join(block_lines[e_start:e_end])
 
-                # If the same field repeats after line_idx, a new record has started
-                if next_field in seen_fields and j > line_idx:
-                    break
-
-                # If current record already has identity and status, any new identity field starts next record
-                has_identity = bool(seen_fields & _IDENTITY_FIELDS)
-                has_status = bool(seen_fields & _STATUS_FIELDS)
-                if has_identity and has_status and next_field in _IDENTITY_FIELDS and j > line_idx:
-                    break
-
-                seen_fields.add(next_field)
-        record_lines.append(next_line)
-    return "\n".join(record_lines)
+    # 6. Case E: Plain listing rows (flat table rows, markdown tables)
+    return block_lines[rel_idx]
 
 
 def _extract_markdown_recovered_content(block: str) -> str:

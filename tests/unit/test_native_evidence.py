@@ -1178,6 +1178,80 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected chained status-first disabled package to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 11. Metadata between identity and status preserves trailing status (#295, Codex comment 3964705696)
+        metadata_between_identity_and_status_disabled = (
+            "Name: other-plugin\nVersion: 1\nStatus: active\n"
+            "Name: portable-resume\nID: portable-resume\nStatus: disabled"
+        )
+        ok, reason = _direct_native_discovery(metadata_between_identity_and_status_disabled)
+        self.assertFalse(ok, f"Expected disabled package to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        metadata_between_identity_and_status_active = (
+            "Name: other-plugin\nVersion: 1\nStatus: disabled\n"
+            "Name: portable-resume\nID: portable-resume\nStatus: active"
+        )
+        ok, reason = _direct_native_discovery(metadata_between_identity_and_status_active)
+        self.assertTrue(ok, f"Expected active package to pass: {reason}")
+
+        # 12. Single record containing multiple identity fields preserves status (#295)
+        plugin_and_name_disabled = (
+            "Plugin: portable-resume\nName: Portable Resume Skills\nStatus: disabled"
+        )
+        ok, reason = _direct_native_discovery(plugin_and_name_disabled)
+        self.assertFalse(ok, f"Expected plugin and name disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        plugin_and_name_active = (
+            "Plugin: portable-resume\nName: Portable Resume Skills\nStatus: active"
+        )
+        ok, reason = _direct_native_discovery(plugin_and_name_active)
+        self.assertTrue(ok, f"Expected plugin and name active entry to pass: {reason}")
+
+        # 13. Key-value record with indented continuation lines preserves trailing status (#295)
+        indented_desc_disabled = (
+            "Name: portable-resume\nDescription:\n  Offline context migration\nStatus: disabled"
+        )
+        ok, reason = _direct_native_discovery(indented_desc_disabled)
+        self.assertFalse(ok, f"Expected indented desc disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        indented_desc_active = (
+            "Name: portable-resume\nDescription:\n  Offline context migration\nStatus: active"
+        )
+        ok, reason = _direct_native_discovery(indented_desc_active)
+        self.assertTrue(ok, f"Expected indented desc active entry to pass: {reason}")
+
+        # 14. Flat colon lines do not merge into adjacent disabled rows (#295)
+        flat_colon_rows_active = (
+            "portable-resume: 1.0.0 (active)\nother-plugin: 2.0.0 (disabled)"
+        )
+        ok, reason = _direct_native_discovery(flat_colon_rows_active)
+        self.assertTrue(ok, f"Expected flat colon active row to pass: {reason}")
+
+        flat_colon_rows_disabled = (
+            "portable-resume: 1.0.0 (disabled)\nother-plugin: 2.0.0 (active)"
+        )
+        ok, reason = _direct_native_discovery(flat_colon_rows_disabled)
+        self.assertFalse(ok, f"Expected flat colon disabled row to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 15. YAML mapping with indented properties preserves status (#295)
+        yaml_mapping_disabled = (
+            "portable-resume:\n  version: 1.0.0\n  status: disabled\n"
+            "other-plugin:\n  version: 2.0.0\n  status: active"
+        )
+        ok, reason = _direct_native_discovery(yaml_mapping_disabled)
+        self.assertFalse(ok, f"Expected YAML disabled mapping to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        yaml_mapping_active = (
+            "portable-resume:\n  version: 1.0.0\n  status: active\n"
+            "other-plugin:\n  version: 2.0.0\n  status: disabled"
+        )
+        ok, reason = _direct_native_discovery(yaml_mapping_active)
+        self.assertTrue(ok, f"Expected YAML active mapping to pass: {reason}")
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
