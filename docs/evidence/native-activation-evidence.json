@@ -32,20 +32,12 @@
       "identity_sha256": "b6c0e056baa0f9869f0105411e48c95908c75e8c7af9af3818e7300cc5115b2e",
       "operator": "automated-collector",
       "platform": "win32",
-      "provenance": {
-        "command": [
-          "agy",
-          "plugin",
-          "validate",
-          "."
-        ],
-        "provenance_verified": true
-      },
-      "reason": "Local discovery verified via agy in isolated environment",
+      "provenance": {},
+      "reason": "Host discovery executed in isolated environment; skill not yet registered in isolated profile",
       "recorded_at": "2026-09-08T08:56:37.794482+00:00",
       "schema_version": "portable-resume/native-evidence-v1",
       "scope": "local_discovery",
-      "state": "current"
+      "state": "not-run"
     },
     {
       "artifact_file": "portable-resume-0.4.4.dev0-antigravity.zip",
@@ -975,19 +967,12 @@
       "identity_sha256": "b6c0e056baa0f9869f0105411e48c95908c75e8c7af9af3818e7300cc5115b2e",
       "operator": "automated-collector",
       "platform": "win32",
-      "provenance": {
-        "command": [
-          "grok",
-          "plugin",
-          "validate"
-        ],
-        "provenance_verified": true
-      },
-      "reason": "Local discovery verified via grok in isolated environment",
+      "provenance": {},
+      "reason": "Host discovery executed in isolated environment; skill not yet registered in isolated profile",
       "recorded_at": "2026-09-08T08:57:04.752802+00:00",
       "schema_version": "portable-resume/native-evidence-v1",
       "scope": "local_discovery",
-      "state": "current"
+      "state": "not-run"
     },
     {
       "artifact_file": "portable-resume-0.4.4.dev0-grok.zip",

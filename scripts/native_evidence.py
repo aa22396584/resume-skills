@@ -34,13 +34,14 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from portable_resume import __version__ as BUNDLE_VERSION
 from portable_resume.build_identity import runtime_identity
+from portable_resume.contracts import validate_envelope
 from portable_resume.diagnostics import SOURCE_KEYS
 from portable_resume.registry import (
     DESTINATION_PROFILES,
     enabled_destination_keys,
     enabled_source_keys,
 )
-from portable_resume.install.catalog import HOST_PROFILES
+from portable_resume.install.catalog import HOST_PROFILES, resolve_skill_root
 from portable_resume.install.package_contracts import PACKAGE_CONTRACTS
 from portable_resume.install.render import materialize_plan, package_identity
 
@@ -221,7 +222,7 @@ _PROFILE_SPECS: dict[str, dict[str, Any]] = {
             SCOPE_NL_SELECTION: "Model inference with Gemini provider",
             SCOPE_MARKETPLACE_INSTALL: "Plugin archive / direct-skill only",
         },
-        "discovery_commands": (("agy", "plugin", "validate", "."),),
+        "discovery_commands": (("agy", "plugin", "list"),),
         "activation_commands": (("agy", "--print", "resume-claude"),),
         "notes": "Qualifies Antigravity CLI v1.1.25+ separately from 2.0/IDE (#281).",
     },
@@ -237,7 +238,7 @@ _PROFILE_SPECS: dict[str, dict[str, Any]] = {
             SCOPE_NL_SELECTION: "Model inference with xAI provider",
             SCOPE_MARKETPLACE_INSTALL: "Public marketplace install",
         },
-        "discovery_commands": (("grok", "plugin", "validate"),),
+        "discovery_commands": (("grok", "plugin", "list"),),
         "activation_commands": (("grok", "--print", "/resume-claude"),),
         "notes": "Fail-closed on unqualified rewind/compaction.",
     },
@@ -633,7 +634,7 @@ def collect_offline_runner_evidence(
     checkout PYTHONPATH.
     """
     if repo_root is None:
-        repo_root = Path(__file__).resolve().parents[3]
+        repo_root = Path(__file__).resolve().parents[1]
 
     plan = materialize_plan(host)
     identity_hash = package_identity(plan)
@@ -856,6 +857,588 @@ def collect_offline_runner_evidence(
         )
 
 
+@dataclass(frozen=True)
+class ExplicitActivationObservation:
+    """Four separate observation layers for native explicit activation."""
+
+    host_responded: bool
+    skill_selected: bool
+    runner_execution_observed: bool
+    fixture_read_verified: bool
+    details: str = ""
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _direct_native_discovery(
+    stdout: str,
+    stderr: str = "",
+    *,
+    returncode: int = 0,
+    expected_package: str = "portable-resume",
+    expected_skill: str = "resume-claude",
+    command: Sequence[str] | None = None,
+    host: str | None = None,
+) -> tuple[bool, str]:
+    """Evaluate host discovery output against expected package/skill identity.
+
+    Fails closed against generic markers (skills, Skills, [ok]), empty outputs,
+    negative listings, validation-only outputs, and non-zero exit codes.
+    """
+    if returncode != 0:
+        return False, f"Subprocess exited with non-zero code {returncode}"
+
+    if not stdout.strip():
+        return False, "Subprocess returned empty output"
+
+    # Reject validation-only commands (e.g. plugin validate)
+    if command and any(arg == "validate" for arg in command):
+        return False, "Package syntax or manifest validation does not establish native package discovery"
+
+    out_lower = stdout.lower()
+
+    # Reject explicit negative / empty listing markers
+    negative_patterns = (
+        r"\bno\s+(?:skills?|plugins?|extensions?|packages?)\s+found\b",
+        r"\b(?:skills?|plugins?|extensions?|packages?)\s*:\s*0\b",
+        r"\b0\s+(?:skills?|plugins?|extensions?|packages?)\s+found\b",
+        r"\b(?:skills?|plugins?|extensions?|packages?)\s*\(0\)",
+        r"\bno\s+imported\s+plugins\b",
+        r"\bno\s+installed\s+(?:skills?|plugins?|extensions?)\b",
+    )
+    for pat in negative_patterns:
+        if re.search(pat, out_lower):
+            return False, "Host reported no skills or plugins found"
+
+    def _has_exact_package_token(text: str, token: str) -> bool:
+        if not token:
+            return False
+        return bool(
+            re.search(
+                rf"(?<![a-zA-Z0-9_.-]){re.escape(token)}(?![a-zA-Z0-9_.-])",
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    # Reject pure generic validation output without package identity
+    if "[ok]" in out_lower and not (
+        _has_exact_package_token(out_lower, expected_package)
+        or _has_exact_package_token(out_lower, expected_skill)
+    ):
+        return False, "Generic validation output does not establish native package discovery"
+
+    # Attempt structured JSON parsing
+    try:
+        data = json.loads(stdout)
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = data.get("plugins") or data.get("skills") or data.get("extensions") or [data]
+        else:
+            items = []
+
+        for item in items:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("id") or item.get("plugin") or item.get("skill")
+                if name in (expected_package, expected_skill):
+                    if item.get("enabled") is False or item.get("active") is False:
+                        return False, f"Package {name} discovered but marked enabled/active=False"
+                    if item.get("error") or item.get("load_error") or item.get("error_message"):
+                        err = item.get("error") or item.get("load_error") or item.get("error_message")
+                        return False, f"Package {name} discovered with error: {err}"
+                    status = str(item.get("status") or item.get("state") or "").lower()
+                    if status and any(
+                        neg in status
+                        for neg in (
+                            "disabled",
+                            "error",
+                            "failed",
+                            "inactive",
+                            "off",
+                            "blocked",
+                            "not found",
+                            "broken",
+                            "unload",
+                        )
+                    ):
+                        return False, f"Package {name} discovered but in {status} state"
+                    return True, f"Discovered expected package {name!r} via structured host JSON"
+            elif isinstance(item, str) and item in (expected_package, expected_skill):
+                return True, f"Discovered expected skill {item!r} via structured host JSON list"
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Match unambiguous expected package or skill token
+    # Do NOT match generic words like "skills", "Skills", "[ok]", "resume", "plugin"
+    # Require delimiters that cannot be part of a package identifier (alphanumeric, dot, underscore, hyphen) (#295)
+    # Bind identity to complete multi-line status record (#295)
+    expected_tokens = [expected_package, expected_skill]
+    lines = stdout.splitlines()
+    for token in expected_tokens:
+        if not token:
+            continue
+        pattern = rf"(?<![a-zA-Z0-9_.-]){re.escape(token)}(?![a-zA-Z0-9_.-])"
+        matches = list(re.finditer(pattern, stdout, re.IGNORECASE))
+        if not matches:
+            continue
+        valid_match = False
+        has_disabled_match = False
+        for m in matches:
+            line_idx = stdout[:m.start()].count("\n")
+            record = _extract_listing_record(lines, line_idx)
+            record_lower = record.lower()
+
+            negative_status_patterns = (
+                r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
+                r"\berror\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
+                r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
+                r"\bload\s+error\b",
+                r"\b(?:not\s+found|cannot\s+find)\b",
+                r"\bdisabled\b",
+                r"\binactive\b",
+            )
+            if any(re.search(neg, record_lower) for neg in negative_status_patterns):
+                has_disabled_match = True
+                continue
+            valid_match = True
+            break
+
+        if valid_match:
+            return True, f"Discovered expected identity {token!r} in host listing"
+        if has_disabled_match:
+            return False, f"Package {token!r} discovered but in disabled/error state"
+
+    return False, "Expected package or skill identity not found in host listing"
+
+
+def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
+    """Extract full multi-line entry block starting at line_idx in a text listing (#295)."""
+    if line_idx >= len(lines):
+        return ""
+    record_lines = [lines[line_idx]]
+    base_line = lines[line_idx]
+    base_indent = len(base_line) - len(base_line.lstrip())
+
+    # Determine if base line is a list bullet (e.g. "- ", "* ", "1. ")
+    stripped = base_line.lstrip()
+    is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", stripped))
+
+    for j in range(line_idx + 1, len(lines)):
+        next_line = lines[j]
+        next_stripped = next_line.strip()
+        if not next_stripped:
+            break
+        next_indent = len(next_line) - len(next_line.lstrip())
+        next_is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", next_stripped))
+
+        # Stop if we hit a new item at the same or lesser indentation, or a new bullet
+        if next_is_bullet:
+            break
+        if not is_bullet and next_indent <= base_indent:
+            break
+        if is_bullet and next_indent <= base_indent:
+            break
+
+        record_lines.append(next_line)
+
+    return "\n".join(record_lines)
+
+
+def _extract_markdown_recovered_content(block: str) -> str:
+    """Extract recovered conversation content from request/action/turn sections.
+
+    Strictly ignores stale metadata headers (like Title:, Persisted cwd:),
+    warnings, security banners, and checklist items (#296).
+    """
+    lines = block.splitlines()
+    content_lines: list[str] = []
+    in_content_section = False
+
+    content_heading_re = re.compile(
+        r"^(?:###\s+(?:latest\s+explicit\s+user\s+request|latest\s+assistant\s+message|"
+        r"latest\s+recorded\s+action|bounded\s+transcript\s+evidence|turn\s+transcript|"
+        r"user|assistant|tool)\b)",
+        re.IGNORECASE,
+    )
+    stop_heading_re = re.compile(
+        r"^(?:##\s+(?:stale\s+session\s+metadata|warnings|required\s+current\s+checks)|"
+        r"#\s+portable\s+resume|###\s+untrusted)",
+        re.IGNORECASE,
+    )
+
+    for line in lines:
+        stripped = line.strip()
+        if content_heading_re.match(stripped):
+            in_content_section = True
+            continue
+        elif stop_heading_re.match(stripped):
+            in_content_section = False
+            continue
+
+        if in_content_section:
+            if stripped.startswith(">"):
+                text = stripped.lstrip("> ").strip()
+                if re.match(r"^\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*$", text, re.IGNORECASE):
+                    continue
+                if re.match(r"^`\[W_[A-Z0-9_]+\]`$", text):
+                    continue
+                if text.startswith("_(") and text.endswith(")_"):
+                    continue
+                if text:
+                    content_lines.append(text)
+            elif stripped and not stripped.startswith("#"):
+                content_lines.append(stripped)
+
+    return " ".join(content_lines)
+
+
+def evaluate_explicit_activation(
+    stdout: str,
+    stderr: str = "",
+    *,
+    returncode: int = 0,
+    expected_source: str = "claude",
+    expected_session: str = "7e0a1246-d538-5993-8d6f-3495aafcdd92",
+    expected_fixture_content: Sequence[str] = ("synthetic request",),
+    execution_record: Mapping[str, Any] | None = None,
+    host: str | None = None,
+) -> tuple[bool, ExplicitActivationObservation]:
+    """Verify four separate observation layers for native explicit activation.
+
+    1. host_responded: host executed and returned code 0 with non-empty output
+    2. skill_selected: host recognized and selected the intended skill/tool
+    3. runner_execution_observed: runner actually executed (observable trace or authentic format)
+    4. fixture_read_verified: exact source, session, and fixture content confirmed read
+    """
+    if returncode != 0:
+        obs = ExplicitActivationObservation(
+            host_responded=False,
+            skill_selected=False,
+            runner_execution_observed=False,
+            fixture_read_verified=False,
+            details=f"Host process exited with return code {returncode}",
+            error=f"exit_code_{returncode}",
+        )
+        return False, obs
+
+    auth_patterns = (
+        r"\b(?:re-?)?authentication required\b",
+        r"\b(?:re-?)?authenticate\b",
+        r"\b(?:not logged in|login required)\b",
+        r"\bplease (?:log ?in|sign in)\b",
+        r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
+        r"\bunauthorized(?:\:|\b)",
+    )
+    err_lower = stderr.lower()
+    if any(re.search(pat, err_lower) for pat in auth_patterns):
+        obs = ExplicitActivationObservation(
+            host_responded=False,
+            skill_selected=False,
+            runner_execution_observed=False,
+            fixture_read_verified=False,
+            details="Host blocked on authentication/login credentials",
+            error="auth_required",
+        )
+        return False, obs
+
+    if not stdout.strip() and not (execution_record and execution_record.get("runner_executed")):
+        obs = ExplicitActivationObservation(
+            host_responded=False,
+            skill_selected=False,
+            runner_execution_observed=False,
+            fixture_read_verified=False,
+            details="Host process returned empty stdout",
+            error="empty_output",
+        )
+        return False, obs
+
+    out_lower = stdout.lower()
+    host_responded = True
+
+    # 2 & 3. Skill selected and runner execution observed
+    skill_selected = False
+    runner_execution_observed = False
+    fixture_read_verified = False
+    missing_parts: list[str] = []
+
+    # Trace A: Observable execution record from instrumented runner / execution log
+    if execution_record and execution_record.get("runner_executed") is True:
+        if execution_record.get("returncode", 0) == 0:
+            skill_selected = True
+            runner_execution_observed = True
+            rec_source = str(execution_record.get("source") or "")
+            rec_session = str(execution_record.get("session_id") or execution_record.get("session") or "")
+            rec_content = str(execution_record.get("content") or "")
+
+            has_source = rec_source.lower() == expected_source.lower()
+            has_session = rec_session.lower() == expected_session.lower()
+            has_content = all(c.lower() in rec_content.lower() for c in expected_fixture_content)
+            if has_source and has_session and has_content:
+                fixture_read_verified = True
+            else:
+                if not has_source:
+                    missing_parts.append(f"source '{expected_source}'")
+                if not has_session:
+                    missing_parts.append(f"session '{expected_session}'")
+                if not has_content:
+                    missing_parts.append(f"fixture content {expected_fixture_content!r}")
+
+    # Trace B: Check for authentic structured JSON envelope (portable-resume/v1)
+    if not fixture_read_verified:
+        json_candidates: list[dict[str, Any]] = []
+        decoder = json.JSONDecoder()
+        idx = 0
+        while idx < len(stdout):
+            idx = stdout.find("{", idx)
+            if idx == -1:
+                break
+            try:
+                obj, end = decoder.raw_decode(stdout, idx)
+
+                def _find_envelopes(data: Any) -> list[dict[str, Any]]:
+                    found: list[dict[str, Any]] = []
+                    if isinstance(data, dict):
+                        if data.get("schema_version") == "portable-resume/v1":
+                            found.append(data)
+                        for val in data.values():
+                            found.extend(_find_envelopes(val))
+                    elif isinstance(data, list):
+                        for item in data:
+                            found.extend(_find_envelopes(item))
+                    return found
+
+                json_candidates.extend(_find_envelopes(obj))
+                idx = max(end, idx + 1)
+            except Exception:
+                idx += 1
+
+        for parsed in json_candidates:
+            if not isinstance(parsed, dict):
+                continue
+            if parsed.get("result") is False or parsed.get("status") == "error":
+                continue
+            if parsed.get("schema_version") != "portable-resume/v1":
+                continue
+            # Validate the complete closed-key envelope contract (#296)
+            try:
+                validate_envelope(parsed)
+            except Exception:
+                continue
+
+            skill_selected = True
+            runner_execution_observed = True
+
+            # Bind proof fields to the same session object (#296)
+            target_sessions: list[dict[str, Any]] = [
+                s for s in parsed.get("sessions", []) if isinstance(s, dict)
+            ]
+
+            session_match_found = False
+            for s in target_sessions:
+                s_source = str(s.get("source") or "")
+                s_id = str(s.get("session_id") or "")
+                # Gather recovered text strictly from conversation content chunks
+                content_chunks: list[str] = []
+                if isinstance(s.get("last_user_request"), str):
+                    content_chunks.append(s["last_user_request"])
+                if isinstance(s.get("last_assistant_action"), str):
+                    content_chunks.append(s["last_assistant_action"])
+                turns = s.get("turns")
+                if isinstance(turns, list):
+                    for t in turns:
+                        if isinstance(t, dict) and isinstance(t.get("content"), str):
+                            content_chunks.append(t["content"])
+                s_text = " ".join(content_chunks)
+
+                s_has_source = s_source.lower() == expected_source.lower()
+                s_has_id = s_id.lower() == expected_session.lower()
+                s_has_content = all(c.lower() in s_text.lower() for c in expected_fixture_content)
+
+                if s_has_source and s_has_id and s_has_content:
+                    fixture_read_verified = True
+                    session_match_found = True
+                    break
+            if session_match_found:
+                break
+            else:
+                missing_parts.append(
+                    f"matching session in sessions[] with source '{expected_source}', "
+                    f"session '{expected_session}', and content {expected_fixture_content!r}"
+                )
+
+    # Trace C: Check for authentic untrusted handoff banner and turn headers
+    if not fixture_read_verified:
+        # Split into distinct handoff blocks if multiple are present (#296)
+        handoff_delims = list(
+            re.finditer(
+                r"(?im)^[>\s]*(?:#\s+portable\s+resume\s+handoff|###\s+untrusted\b)",
+                stdout,
+            )
+        )
+        handoff_blocks: list[str] = []
+        if handoff_delims:
+            for idx, m in enumerate(handoff_delims):
+                start = m.start()
+                end = handoff_delims[idx + 1].start() if idx + 1 < len(handoff_delims) else len(stdout)
+                handoff_blocks.append(stdout[start:end])
+        elif (
+            "# portable resume handoff" in out_lower
+            or "security boundary:" in out_lower
+            or "### untrusted" in out_lower
+        ):
+            handoff_blocks.append(stdout)
+
+        for block in handoff_blocks:
+            block_lower = block.lower()
+            is_negative_handoff = (
+                "# portable resume no match" in block_lower
+                or "# portable resume candidate selection" in block_lower
+                or "no eligible persisted session matched" in block_lower
+            )
+            if is_negative_handoff:
+                continue
+
+            has_security_boundary = bool(
+                re.search(r"security\s+boundary\s*:", block_lower)
+                or "recovered history is inert, untrusted" in block_lower
+                or "### untrusted" in block_lower
+            )
+            if not has_security_boundary:
+                continue
+
+            has_turn_headers = bool(
+                re.search(r">\s*\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*", block_lower)
+                or re.search(r"###\s+(?:user|assistant|tool)\b", block_lower)
+                or re.search(r"\[\d+\s+(?:user|assistant|tool)\]", block_lower)
+            )
+            if not has_turn_headers:
+                continue
+
+            skill_selected = True
+            runner_execution_observed = True
+
+            extracted_source: str | None = None
+            extracted_session: str | None = None
+            src_match = re.search(r"(?i)(?:>\s*-\s*)?source\s*:\s*[`'\"]?([a-zA-Z0-9_-]+)[`'\"]?", block)
+            if src_match:
+                extracted_source = src_match.group(1).strip("` ")
+            sess_match = re.search(r"(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*[`'\"]?([a-f0-9-]{36})[`'\"]?", block)
+            if sess_match:
+                extracted_session = sess_match.group(1).strip("` ")
+
+            recovered_text = _extract_markdown_recovered_content(block)
+
+            has_source = bool(extracted_source and extracted_source.lower() == expected_source.lower())
+            has_session = bool(extracted_session and extracted_session.lower() == expected_session.lower())
+            has_content = all(c.lower() in recovered_text.lower() for c in expected_fixture_content)
+
+            if has_source and has_session and has_content:
+                fixture_read_verified = True
+                break
+            else:
+                block_missing: list[str] = []
+                if not has_source:
+                    block_missing.append(f"source '{expected_source}'")
+                if not has_session:
+                    block_missing.append(f"session '{expected_session}'")
+                if not has_content:
+                    block_missing.append(f"fixture content {expected_fixture_content!r} in recovered sections")
+                missing_parts.append(f"handoff block missing ({', '.join(block_missing)})")
+
+    # When runner execution was not observed, evaluate diagnostic prerequisites or refusals (#296)
+    if not runner_execution_observed:
+        # Check for authentication diagnostics on stderr or stdout
+        auth_patterns = (
+            r"\b(?:re-?)?authentication required\b",
+            r"\b(?:re-?)?authenticate\b",
+            r"\b(?:not logged in|login required)\b",
+            r"\bplease (?:log ?in|sign in)\b",
+            r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
+            r"\bunauthorized(?:\:|\b)",
+        )
+        err_lower = stderr.lower()
+        if any(re.search(pat, err_lower) for pat in auth_patterns) or any(
+            re.search(pat, out_lower) for pat in auth_patterns
+        ):
+            obs = ExplicitActivationObservation(
+                host_responded=False,
+                skill_selected=False,
+                runner_execution_observed=False,
+                fixture_read_verified=False,
+                details="Host blocked on authentication/login credentials",
+                error="auth_required",
+            )
+            return False, obs
+
+        # Check for refusals
+        refusals = (
+            "i cannot",
+            "i am unable to",
+            "i apologize",
+            "as an ai",
+            "permission denied",
+            "refusal",
+            "command not found",
+            "unknown command",
+        )
+        if any(ref in out_lower for ref in refusals):
+            obs = ExplicitActivationObservation(
+                host_responded=True,
+                skill_selected=False,
+                runner_execution_observed=False,
+                fixture_read_verified=False,
+                details="Host refused or failed to select skill",
+                error="refusal",
+            )
+            return False, obs
+
+        obs = ExplicitActivationObservation(
+            host_responded=host_responded,
+            skill_selected=False,
+            runner_execution_observed=False,
+            fixture_read_verified=False,
+            details="Host output does not contain observed runner execution or authentic handoff envelope",
+            error="runner_execution_not_observed",
+        )
+        return False, obs
+
+    if not fixture_read_verified:
+        details = f"Fixture read verification failed; missing: {', '.join(missing_parts) or 'bound session match'}"
+        obs = ExplicitActivationObservation(
+            host_responded=host_responded,
+            skill_selected=skill_selected,
+            runner_execution_observed=runner_execution_observed,
+            fixture_read_verified=False,
+            details=details,
+            error="fixture_verification_failed",
+        )
+        return False, obs
+
+    obs = ExplicitActivationObservation(
+        host_responded=True,
+        skill_selected=True,
+        runner_execution_observed=True,
+        fixture_read_verified=True,
+        details="All activation observation layers verified (host response, skill selection, runner execution, fixture read)",
+        error=None,
+    )
+    return True, obs
+
+
+def run_explicit_activation(*args: Any, **kwargs: Any) -> Any:
+    """Run explicit activation or evaluate explicit activation observations.
+
+    If first positional argument is an enabled destination host key, delegates to
+    collect_explicit_activation_evidence. Otherwise delegates to evaluate_explicit_activation.
+    """
+    if args and isinstance(args[0], str) and args[0] in enabled_destination_keys() and "\n" not in args[0] and " " not in args[0]:
+        return collect_explicit_activation_evidence(*args, **kwargs)
+    return evaluate_explicit_activation(*args, **kwargs)
+
+
 def collect_local_discovery_evidence(
     host: str,
     *,
@@ -949,12 +1532,6 @@ def collect_local_discovery_evidence(
         isolated_project = tmp_root / "project"
         isolated_project.mkdir()
 
-        evidence_plan = materialize_evidence_plan(host)
-        for rel_path, data in evidence_plan.items():
-            dest = isolated_project / rel_path
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(data)
-
         env = {
             "PATH": os.environ.get("PATH", ""),
             "HOME": str(isolated_home),
@@ -963,6 +1540,38 @@ def collect_local_discovery_evidence(
         }
         if profile.env_config_var:
             env[profile.env_config_var] = str(isolated_home / "config")
+
+        # Materialize under host-specific project and global discovery roots (#296)
+        proj_root_str = resolve_skill_root(
+            host=host,
+            scope="project",
+            project_dir=str(isolated_project),
+            home_dir=str(isolated_home),
+        )
+        host_proj_root = Path(proj_root_str)
+        for rel_path, data in plan.items():
+            dest = host_proj_root / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+
+        global_root_str = resolve_skill_root(
+            host=host,
+            scope="global",
+            project_dir=None,
+            home_dir=str(isolated_home),
+            environ=env,
+        )
+        host_global_root = Path(global_root_str)
+        for rel_path, data in plan.items():
+            dest = host_global_root / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+
+        evidence_plan = materialize_evidence_plan(host)
+        for rel_path, data in evidence_plan.items():
+            dest = isolated_project / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
 
         cmd = list(profile.discovery_commands[0])
         try:
@@ -1047,15 +1656,16 @@ def collect_local_discovery_evidence(
                 reason=sanitize_evidence_text(f"Discovery command exited {proc.returncode}: {proc.stderr[:200]}"),
             )
 
-        out_lower = proc.stdout.lower()
-        valid_discovery = (
-            "resume-claude" in out_lower
-            or "portable-resume" in out_lower
-            or "skills" in out_lower
-            or "[ok]" in out_lower
+        passed, detail = _direct_native_discovery(
+            proc.stdout,
+            proc.stderr,
+            returncode=proc.returncode,
+            expected_package="portable-resume",
+            expected_skill="resume-claude",
+            command=cmd,
+            host=host,
         )
-        if not valid_discovery:
-            # If the command succeeded but the host did not list skills because registration is required
+        if not passed:
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_LOCAL_DISCOVERY,
@@ -1067,11 +1677,16 @@ def collect_local_discovery_evidence(
                 host_version=host_ver,
                 operator=operator,
                 ci_run_url=ci_run_url,
-                reason="Host discovery executed in isolated environment; skill not yet registered in isolated profile",
+                reason=sanitize_evidence_text(f"Host discovery in isolated environment did not observe expected package: {detail}"),
             )
 
         # Provenance check: verify discovered skill matches expected package
-        if not verify_installed_provenance(isolated_project / "resume-claude", plan):
+        skill_dirs = [
+            host_proj_root / "resume-claude",
+            isolated_project / "resume-claude",
+            host_global_root / "resume-claude",
+        ]
+        if not any(verify_installed_provenance(d, plan) for d in skill_dirs):
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_LOCAL_DISCOVERY,
@@ -1114,7 +1729,7 @@ def collect_explicit_activation_evidence(
 ) -> NativeEvidenceRecord:
     """Collect native explicit headless activation evidence using host CLI if available."""
     if repo_root is None:
-        repo_root = Path(__file__).resolve().parents[3]
+        repo_root = Path(__file__).resolve().parents[1]
 
     profile = get_evidence_profile(host)
     plan = materialize_plan(host)
@@ -1220,13 +1835,105 @@ def collect_explicit_activation_evidence(
         isolated_project = tmp_root / "project"
         isolated_project.mkdir()
 
+        # Stage synthetic fixture into isolated store locations (#296)
+        config_dir = isolated_home / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(fixture_dir, config_dir, dirs_exist_ok=True)
+        dot_claude_dir = isolated_home / ".claude"
+        dot_claude_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(fixture_dir, dot_claude_dir, dirs_exist_ok=True)
+
+        # Stage session jsonl under the cwd slug for isolated_project so that
+        # direct host / runner execution scoped to isolated_project reads the synthetic session.
+        from portable_resume.adapters.claude import _slugify_cwd
+        from portable_resume.paths import canonicalize_cwd
+
+        project_slug = _slugify_cwd(canonicalize_cwd(str(isolated_project)))
+        session_id = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
+        session_content = (
+            json.dumps({
+                "type": "user",
+                "uuid": "93efcefc-43bc-5677-87c1-96b663daec3f",
+                "parentUuid": None,
+                "sessionId": session_id,
+                "cwd": str(isolated_project),
+                "timestamp": "2026-07-20T00:00:00Z",
+                "message": {"role": "user", "content": "synthetic request"},
+            })
+            + "\n"
+            + json.dumps({
+                "type": "assistant",
+                "uuid": "b13ddf02-4741-56bb-89fe-cb4eea9d5e5d",
+                "parentUuid": "93efcefc-43bc-5677-87c1-96b663daec3f",
+                "sessionId": session_id,
+                "cwd": str(isolated_project),
+                "timestamp": "2026-07-20T00:00:00Z",
+                "message": {"role": "assistant", "content": "synthetic response"},
+            })
+            + "\n"
+        )
+        for store_dir in (config_dir, dot_claude_dir):
+            slug_dir = store_dir / "projects" / project_slug
+            slug_dir.mkdir(parents=True, exist_ok=True)
+            (slug_dir / f"{session_id}.jsonl").write_text(session_content, encoding="utf-8")
+            for entry in store_dir.rglob("*.jsonl"):
+                try:
+                    os.utime(entry, None)
+                except OSError:
+                    pass
+
+        if host != "claude":
+            dot_host_dir = isolated_home / f".{host}"
+            dot_host_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(fixture_dir, dot_host_dir, dirs_exist_ok=True)
+
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(isolated_home),
+            "USERPROFILE": str(isolated_home),
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        }
+        if profile.env_config_var:
+            env[profile.env_config_var] = str(isolated_home / "config")
+
+        # Materialize skill under host's project and global discovery roots (#296)
+        proj_root_str = resolve_skill_root(
+            host=host,
+            scope="project",
+            project_dir=str(isolated_project),
+            home_dir=str(isolated_home),
+        )
+        host_proj_root = Path(proj_root_str)
+        for rel_path, data in plan.items():
+            dest = host_proj_root / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+
+        global_root_str = resolve_skill_root(
+            host=host,
+            scope="global",
+            project_dir=None,
+            home_dir=str(isolated_home),
+            environ=env,
+        )
+        host_global_root = Path(global_root_str)
+        for rel_path, data in plan.items():
+            dest = host_global_root / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+
         evidence_plan = materialize_evidence_plan(host)
         for rel_path, data in evidence_plan.items():
             dest = isolated_project / rel_path
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
 
-        if not verify_installed_provenance(isolated_project / "resume-claude", plan):
+        skill_dirs = [
+            host_proj_root / "resume-claude",
+            isolated_project / "resume-claude",
+            host_global_root / "resume-claude",
+        ]
+        if not any(verify_installed_provenance(d, plan) for d in skill_dirs):
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_EXPLICIT_ACTIVATION,
@@ -1240,15 +1947,6 @@ def collect_explicit_activation_evidence(
                 ci_run_url=ci_run_url,
                 reason="Same-name wrong-package discovery failed provenance checks",
             )
-
-        env = {
-            "PATH": os.environ.get("PATH", ""),
-            "HOME": str(isolated_home),
-            "USERPROFILE": str(isolated_home),
-            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
-        }
-        if profile.env_config_var:
-            env[profile.env_config_var] = str(isolated_home / "config")
 
         raw_cmd = list(profile.activation_commands[0])
         cmd = [
@@ -1322,23 +2020,17 @@ def collect_explicit_activation_evidence(
                 ),
             )
 
-        if proc.returncode != 0:
-            return NativeEvidenceRecord(
-                host=host,
-                scope=SCOPE_EXPLICIT_ACTIVATION,
-                state=STATE_FAILED,
-                artifact_file=artifact_name,
-                artifact_sha256=artifact_sha,
-                identity_sha256=identity_hash,
-                recorded_at=current_iso_timestamp(),
-                host_version=host_ver,
-                operator=operator,
-                ci_run_url=ci_run_url,
-                reason=sanitize_evidence_text(f"Activation command exited {proc.returncode}: {proc.stderr[:200]}"),
-            )
+        passed, obs = evaluate_explicit_activation(
+            proc.stdout,
+            proc.stderr,
+            returncode=proc.returncode,
+            expected_source="claude",
+            expected_session="7e0a1246-d538-5993-8d6f-3495aafcdd92",
+            expected_fixture_content=("synthetic request",),
+            host=host,
+        )
 
-        synthetic_marker = "synthetic request"
-        if synthetic_marker not in proc.stdout.lower() and "untrusted" not in proc.stdout.lower():
+        if not passed:
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_EXPLICIT_ACTIVATION,
@@ -1350,7 +2042,14 @@ def collect_explicit_activation_evidence(
                 host_version=host_ver,
                 operator=operator,
                 ci_run_url=ci_run_url,
-                reason="Activation output did not contain expected synthetic marker or untrusted banner",
+                reason=sanitize_evidence_text(f"Explicit activation failed verification: {obs.details}"),
+                provenance={
+                    "command": [sanitize_evidence_text(c) for c in cmd],
+                    "host_responded": obs.host_responded,
+                    "skill_selected": obs.skill_selected,
+                    "runner_execution_observed": obs.runner_execution_observed,
+                    "fixture_read_verified": obs.fixture_read_verified,
+                },
             )
 
         return NativeEvidenceRecord(
@@ -1366,7 +2065,11 @@ def collect_explicit_activation_evidence(
             ci_run_url=ci_run_url,
             reason=sanitize_evidence_text(f"Native activation verified via {cmd[0]} with synthetic marker"),
             provenance={
-                "command": cmd,
+                "command": [sanitize_evidence_text(c) for c in cmd],
+                "host_responded": obs.host_responded,
+                "skill_selected": obs.skill_selected,
+                "runner_execution_observed": obs.runner_execution_observed,
+                "fixture_read_verified": obs.fixture_read_verified,
                 "synthetic_marker_verified": True,
                 "owned_runner_invoked": True,
             },
