@@ -1718,6 +1718,35 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected 'Health: 0' to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 29. Plain package entry with dual status fields retains indented properties (#295, Codex comment 3966653462)
+        dual_status_disabled = (
+            "portable-resume\n"
+            "  Status: installed\n"
+            "  State: disabled"
+        )
+        ok, reason = _direct_native_discovery(dual_status_disabled)
+        self.assertFalse(ok, f"Expected dual-status disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        dual_status_active = (
+            "portable-resume\n"
+            "  Status: installed\n"
+            "  State: active"
+        )
+        ok, reason = _direct_native_discovery(dual_status_active)
+        self.assertTrue(ok, f"Expected dual-status active entry to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        dual_status_with_summary = (
+            "portable-resume\n"
+            "  Summary: Offline context migration\n"
+            "  Status: installed\n"
+            "  State: disabled"
+        )
+        ok, reason = _direct_native_discovery(dual_status_with_summary)
+        self.assertFalse(ok, f"Expected dual-status disabled entry with summary to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"

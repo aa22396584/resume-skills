@@ -902,6 +902,7 @@ _DESCRIPTIVE_METADATA_FIELDS = frozenset({
     "license", "scope", "origin", "summary", "docs", "help", "readme",
 })
 _KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS | _STATUS_ATTR_FIELDS | _DESCRIPTIVE_METADATA_FIELDS
+_PROPERTY_FIELDS = _KNOWN_FIELDS - _IDENTITY_FIELDS
 _FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
 _POSITIVE_DIAG_RE = re.compile(
@@ -1245,22 +1246,34 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
 
         # Check if child lines at min_child_indent are property fields
         has_property_fields = any(
-            line_fields[i] in (_STATUS_ATTR_FIELDS | _METADATA_FIELDS | _STATUS_FIELDS)
+            line_fields[i] in _PROPERTY_FIELDS
             for i in child_item_indices
+        )
+
+        # Distinguish a plain package item with indented properties from a category header (#295, Codex comment 3966653462).
+        # A plain package item has property child fields (e.g. Status: installed, State: disabled),
+        # but no child identity fields (Name:, Package:, etc.) and no repeated fields.
+        is_plain_item_with_props = (
+            not bool(child_identity_indices)
+            and not has_repeated_child_fields
+            and all(
+                line_fields[i] in _PROPERTY_FIELDS
+                for i in child_item_indices
+            )
         )
 
         # Line 0 is a category header if:
         # - It is not an identity field (e.g. not "Package: portable-resume"), AND
+        # - It is not a plain package item with indented property fields, AND
         # - Either child lines have no property fields (plain item names or items with sub-indentation),
-        #   or child lines contain multiple identity/status fields, repeated fields, or explicit identity labels.
+        #   or child lines contain child identity labels, multiple identities, or repeated fields.
         is_category_header = (
             line_fields[0] not in _IDENTITY_FIELDS
+            and not is_plain_item_with_props
             and (
                 not has_property_fields
-                or len(child_identity_indices) >= 2
-                or len(child_status_indices) >= 2
-                or has_repeated_child_fields
                 or bool(child_identity_indices)
+                or has_repeated_child_fields
             )
         )
         if is_category_header:
