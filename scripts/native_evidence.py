@@ -1085,32 +1085,49 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     if len(block_lines) == 1:
         return block_lines[0]
 
-    # 2. Case A: Bullet lists
-    bullet_indices = [i for i, l in enumerate(block_lines) if _BULLET_RE.match(l.strip())]
-    if bullet_indices:
-        if rel_idx < bullet_indices[0]:
-            return block_lines[rel_idx]
-        b_item_start = bullet_indices[0]
-        for b_idx in bullet_indices:
-            if b_idx <= rel_idx:
-                b_item_start = b_idx
-            else:
-                break
-        b_item_end = len(block_lines)
-        for b_idx in bullet_indices:
-            if b_idx > b_item_start:
-                b_item_end = b_idx
-                break
-        return "\n".join(block_lines[b_item_start:b_item_end])
-
     indents = [len(l) - len(l.lstrip()) for l in block_lines]
+
+    def _extract_field_name(line: str) -> str | None:
+        m = _FIELD_RE.match(line.strip())
+        return m.group(1).lower() if m else None
+
+    line_fields = [_extract_field_name(l) for l in block_lines]
+
+    # Check if rel_idx belongs to a bullet item (is a bullet line or indented under one)
+    target_is_bullet = bool(_BULLET_RE.match(block_lines[rel_idx].strip()))
+    parent_bullet_idx: int | None = None
+    if not target_is_bullet:
+        for k in range(rel_idx - 1, -1, -1):
+            if indents[k] < indents[rel_idx]:
+                if _BULLET_RE.match(block_lines[k].strip()):
+                    parent_bullet_idx = k
+                break
+
+    in_bullet_item = target_is_bullet or (parent_bullet_idx is not None)
+
+    # 2. Case A: Bullet lists (only when rel_idx belongs to that bullet list)
+    if in_bullet_item:
+        bullet_start = rel_idx if target_is_bullet else (parent_bullet_idx if parent_bullet_idx is not None else 0)
+        bullet_indent = indents[bullet_start]
+        entry_end = bullet_start + 1
+        while entry_end < len(block_lines):
+            next_indent = indents[entry_end]
+            next_is_bullet = bool(_BULLET_RE.match(block_lines[entry_end].strip()))
+            if next_is_bullet and next_indent <= bullet_indent:
+                break
+            if not next_is_bullet and next_indent <= bullet_indent:
+                break
+            entry_end += 1
+        return "\n".join(block_lines[bullet_start:entry_end])
 
     # 3. Case B: Indented hierarchy under a single header or item name
     # Line 0 is at indent 0, and ALL other lines (1..N-1) are indented (> 0)
     if indents[0] == 0 and all(ind > 0 for ind in indents[1:]):
+        # If line 0 is an identity field (e.g. Name: ...), it is the entry itself, not a category header
+        is_category_header = (line_fields[0] not in _IDENTITY_FIELDS)
         min_child_indent = min(indents[1:])
         child_item_indices = [i for i, ind in enumerate(indents) if ind == min_child_indent]
-        if len(child_item_indices) >= 2:
+        if is_category_header and len(child_item_indices) >= 2:
             # Multiple sibling items under a category header at line 0
             if rel_idx == 0:
                 return block_lines[0]
@@ -1124,12 +1141,6 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
         else:
             # Single item at line 0 with indented property lines
             return "\n".join(block_lines)
-
-    def _extract_field_name(line: str) -> str | None:
-        m = _FIELD_RE.match(line.strip())
-        return m.group(1).lower() if m else None
-
-    line_fields = [_extract_field_name(l) for l in block_lines]
 
     # 4. Case C: Indented items under non-attribute keys (e.g. YAML mapping)
     indent_0_indices = [i for i, ind in enumerate(indents) if ind == 0]

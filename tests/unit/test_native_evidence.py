@@ -1245,12 +1245,28 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected YAML disabled mapping to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
-        yaml_mapping_active = (
-            "portable-resume:\n  version: 1.0.0\n  status: active\n"
-            "other-plugin:\n  version: 2.0.0\n  status: disabled"
+        # 16. Nested bullets in non-bullet record preserve parent status (#295, Codex comment 3964828006)
+        nested_bullet_single_disabled = (
+            "Name: portable-resume\n  Status: disabled\n  Commands:\n    - resume-claude"
         )
-        ok, reason = _direct_native_discovery(yaml_mapping_active)
-        self.assertTrue(ok, f"Expected YAML active mapping to pass: {reason}")
+        ok, reason = _direct_native_discovery(nested_bullet_single_disabled)
+        self.assertFalse(ok, f"Expected single nested-bullet disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        nested_bullet_adjacent_disabled = (
+            "Name: portable-resume\n  Status: disabled\n  Commands:\n    - resume-claude\n"
+            "Name: other-plugin\n  Status: active"
+        )
+        ok, reason = _direct_native_discovery(nested_bullet_adjacent_disabled)
+        self.assertFalse(ok, f"Expected adjacent nested-bullet disabled entry to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        nested_bullet_adjacent_active = (
+            "Name: portable-resume\n  Status: active\n  Commands:\n    - resume-claude\n"
+            "Name: other-plugin\n  Status: disabled"
+        )
+        ok, reason = _direct_native_discovery(nested_bullet_adjacent_active)
+        self.assertTrue(ok, f"Expected adjacent nested-bullet active entry to pass: {reason}")
 
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
