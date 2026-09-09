@@ -872,7 +872,11 @@ class ExplicitActivationObservation:
         return asdict(self)
 
 
-_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences terminated by BEL (\x07) or ST (\x1b\)
+    r"|\x1b\[[0-?]*[ -/]*[@-~]"           # CSI sequences
+    r"|\x1b[@-Z\\-_]"                     # 2-character escape sequences
+)
 
 
 def strip_ansi(text: str) -> str:
@@ -1054,30 +1058,44 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
 
     bullet_re = re.compile(r"^(?:[-*•]|\d+\.)\s+")
     header_re = re.compile(r"^(?:package|plugin|skill|extension|name|id)\s*:", re.IGNORECASE)
+    field_continuation_re = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 
     start = line_idx
     target_line = lines[line_idx]
+    target_stripped = target_line.strip()
     target_indent = len(target_line) - len(target_line.lstrip())
-    target_is_bullet = bool(bullet_re.match(target_line.lstrip()))
+    target_is_bullet = bool(bullet_re.match(target_stripped))
+    target_is_field = bool(field_continuation_re.match(target_stripped))
+    target_is_header = bool(header_re.match(target_stripped))
 
     if not target_is_bullet and target_indent == 0:
-        curr = line_idx
-        while curr > 0:
-            prev = lines[curr - 1]
-            prev_stripped = prev.strip()
-            if not prev_stripped:
-                break
-            prev_indent = len(prev) - len(prev.lstrip())
-            prev_is_bullet = bool(bullet_re.match(prev.lstrip()))
-            if prev_is_bullet:
-                break
-            elif prev_indent == 0:
-                if header_re.match(prev_stripped) and header_re.match(target_line.strip()):
+        # Backward scan only applies to structured key-value listings
+        if target_is_field:
+            curr = line_idx
+            while curr > 0:
+                prev = lines[curr - 1]
+                prev_stripped = prev.strip()
+                if not prev_stripped:
                     break
+                prev_indent = len(prev) - len(prev.lstrip())
+                prev_is_bullet = bool(bullet_re.match(prev_stripped))
+                if prev_is_bullet or prev_indent != 0:
+                    break
+                if not field_continuation_re.match(prev_stripped):
+                    break
+                if target_is_header:
+                    # If target is already a header, stop before any earlier header or its fields
+                    if header_re.match(prev_stripped):
+                        break
+                    earlier_headers = any(
+                        header_re.match(lines[k].strip())
+                        for k in range(0, curr)
+                        if lines[k].strip()
+                    )
+                    if earlier_headers:
+                        break
                 start = curr - 1
                 curr -= 1
-            else:
-                break
     elif not target_is_bullet and target_indent > 0:
         curr = line_idx
         while curr > 0:
@@ -1086,15 +1104,23 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
             if not prev_stripped:
                 break
             prev_indent = len(prev) - len(prev.lstrip())
-            prev_is_bullet = bool(bullet_re.match(prev.lstrip()))
+            prev_is_bullet = bool(bullet_re.match(prev_stripped))
             if prev_is_bullet and target_indent > prev_indent:
                 start = curr - 1
                 break
             break
 
     base_line = lines[start]
+    base_stripped = base_line.strip()
     base_indent = len(base_line) - len(base_line.lstrip())
-    is_bullet = bool(bullet_re.match(base_line.lstrip()))
+    is_bullet = bool(bullet_re.match(base_stripped))
+    base_is_field = bool(field_continuation_re.match(base_stripped))
+
+    seen_fields: set[str] = set()
+    if base_is_field:
+        m = field_continuation_re.match(base_stripped)
+        if m:
+            seen_fields.add(m.group(1).lower())
 
     record_lines = [lines[start]]
     for j in range(start + 1, len(lines)):
@@ -1113,8 +1139,21 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
             if base_indent > 0 and next_indent <= base_indent:
                 break
             if base_indent == 0 and next_indent == 0:
+                # Stop if next line is a new package/skill header
                 if header_re.match(next_stripped) and j > line_idx:
                     break
+                # If base_line is not a key-value field, this is a flat listing row;
+                # treat adjacent same-indent plain rows as separate records.
+                if not base_is_field:
+                    break
+                # If base_line is a key-value field, next line must also be a key-value field
+                next_field_m = field_continuation_re.match(next_stripped)
+                if not next_field_m:
+                    break
+                next_field = next_field_m.group(1).lower()
+                if next_field in seen_fields and j > line_idx:
+                    break
+                seen_fields.add(next_field)
         record_lines.append(next_line)
     return "\n".join(record_lines)
 

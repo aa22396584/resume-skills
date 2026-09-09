@@ -1128,18 +1128,62 @@ Execution completed successfully.
         self.assertFalse(ok, f"Expected indented disabled entry to be rejected: {reason}")
         self.assertIn("disabled/error", reason)
 
+        # 6. Flat space-separated listing rows stop at adjacent rows (#295, Codex review)
+        flat_active = "Name Status\nportable-resume enabled\nother-plugin disabled"
+        ok, reason = _direct_native_discovery(flat_active)
+        self.assertTrue(ok, f"Expected flat enabled row to pass discovery: {reason}")
+        self.assertIn("portable-resume", reason)
+
+        flat_disabled = "Name Status\nportable-resume disabled\nother-plugin enabled"
+        ok, reason = _direct_native_discovery(flat_disabled)
+        self.assertFalse(ok, f"Expected flat disabled row to be rejected: {reason}")
+        self.assertIn("disabled/error", reason)
+
+        # 7. Flat Markdown table rows stop at adjacent rows
+        md_table_active = "| Name | Status |\n| portable-resume | enabled |\n| other-plugin | disabled |"
+        ok, reason = _direct_native_discovery(md_table_active)
+        self.assertTrue(ok, f"Expected markdown table enabled row to pass discovery: {reason}")
+
+        # 8. Unbulleted key-value entries without blank lines stop at adjacent package header
+        no_blank_lines_active = (
+            "Package: other-plugin\nStatus: disabled\nPackage: portable-resume\nStatus: active"
+        )
+        ok, reason = _direct_native_discovery(no_blank_lines_active)
+        self.assertTrue(ok, f"Expected active package in unseparated key-value list to pass: {reason}")
+
+        no_blank_lines_disabled = (
+            "Package: portable-resume\nStatus: disabled\nPackage: other-plugin\nStatus: active"
+        )
+        ok, reason = _direct_native_discovery(no_blank_lines_disabled)
+        self.assertFalse(ok, f"Expected disabled package in unseparated key-value list to be rejected: {reason}")
+
     def test_ansi_escape_code_resilience(self) -> None:
         """ANSI terminal color/formatting escape codes do not corrupt discovery or activation (#295, #296)."""
         expected_session = "7e0a1246-d538-5993-8d6f-3495aafcdd92"
 
-        # 1. strip_ansi utility function
+        # 1. strip_ansi utility function (CSI and OSC sequences)
         self.assertEqual(strip_ansi("\x1b[32mhello\x1b[0m"), "hello")
         self.assertEqual(strip_ansi("\x1b[1;31mERROR:\x1b[0m failed"), "ERROR: failed")
+        # OSC-8 hyperlinks with ST (\x1b\) terminator
+        self.assertEqual(
+            strip_ansi("\x1b]8;;https://example.test\x1b\\portable-resume\x1b]8;;\x1b\\"),
+            "portable-resume",
+        )
+        # OSC-8 hyperlinks with BEL (\x07) terminator
+        self.assertEqual(
+            strip_ansi("\x1b]8;;https://example.test\x07portable-resume\x1b]8;;\x07"),
+            "portable-resume",
+        )
 
         # 2. Discovery: colored package name passes
         colored_listing = "\x1b[32mportable-resume\x1b[0m (v0.4.4.dev0)\n\x1b[34m- other-plugin\x1b[0m"
         ok, reason = _direct_native_discovery(colored_listing)
         self.assertTrue(ok, f"Expected colored listing to pass discovery: {reason}")
+
+        # OSC-8 hyperlinked package name passes discovery
+        osc8_listing = "\x1b]8;;https://github.com/ImL1s/resume-skills\x1b\\portable-resume\x1b]8;;\x1b\\ [enabled]"
+        ok, reason = _direct_native_discovery(osc8_listing)
+        self.assertTrue(ok, f"Expected OSC-8 hyperlinked package name to pass discovery: {reason}")
 
         # 3. Discovery: colored negative listing is rejected
         colored_negative = "\x1b[31mNo skills found\x1b[0m"
