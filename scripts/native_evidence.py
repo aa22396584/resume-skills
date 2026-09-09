@@ -891,11 +891,17 @@ _METADATA_FIELDS = frozenset({
     "repository", "url", "path", "location", "source", "type",
     "license", "scope", "origin", "enabled", "active",
 })
-_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS
 _STATUS_ATTR_FIELDS = frozenset({
     "status", "state", "enabled", "active", "error", "load_error",
-    "error_message", "health",
+    "error_message", "health", "diagnostic", "message", "reason",
+    "details", "detail", "note", "notes", "result",
 })
+_DESCRIPTIVE_METADATA_FIELDS = frozenset({
+    "version", "author", "publisher", "description", "homepage",
+    "repository", "url", "path", "location", "source", "type",
+    "license", "scope", "origin", "summary", "docs", "help", "readme",
+})
+_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS | _STATUS_ATTR_FIELDS | _DESCRIPTIVE_METADATA_FIELDS
 _FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
 
@@ -1073,7 +1079,13 @@ def _direct_native_discovery(
                 m_field = _FIELD_RE.match(clean_line)
                 if m_field:
                     field_name = m_field.group(1).strip().lower()
-                    if field_name in _STATUS_ATTR_FIELDS:
+                    if field_name in _DESCRIPTIVE_METADATA_FIELDS:
+                        # Suppress only known descriptive metadata fields (author, description, repository, etc.)
+                        # and their indented continuation lines (#295, Codex comment 3965487915).
+                        in_non_status_meta = True
+                        meta_indent = line_indent
+                        continue
+                    elif field_name in _STATUS_ATTR_FIELDS:
                         in_non_status_meta = False
                         filtered_lines.append((line, True))
                         continue
@@ -1082,9 +1094,10 @@ def _direct_native_discovery(
                         filtered_lines.append((line, False))
                         continue
                     else:
-                        # Non-status metadata field (repository, author, path, url, description, version, etc.)
-                        in_non_status_meta = True
-                        meta_indent = line_indent
+                        # Unrecognized or diagnostic field (e.g. Diagnostic, Message, Reason, Details).
+                        # Retain for failure matching (#295, Codex comment 3965487915).
+                        in_non_status_meta = False
+                        filtered_lines.append((line, False))
                         continue
 
                 if in_non_status_meta:
@@ -1096,8 +1109,8 @@ def _direct_native_discovery(
                 filtered_lines.append((line, False))
 
             negative_field_patterns = (
-                r"\b(?:status|state|enabled|active)\s*:\s*(?:disabled|error|failed|inactive|off|blocked|false|no|0)\b",
-                r"\b(?:error|load_error|error_message)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
+                r"\b(?:status|state|enabled|active|diagnostic|message|reason|health|result)\s*:\s*(?:disabled|error|failed|inactive|off|blocked|false|no|0)\b",
+                r"\b(?:error|load_error|error_message|diagnostic|message|reason)\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid|error)\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
@@ -1240,6 +1253,7 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
                     entry_starts.insert(0, candidates[0])
             else:
                 # Identity-first or plain-item orientation
+                has_explicit_identity = bool(child_identity_indices)
                 entry_starts = [candidates[0]]
                 seen_in_curr: set[str] = set()
                 if line_fields[candidates[0]] and line_fields[candidates[0]] in _KNOWN_FIELDS:
@@ -1247,21 +1261,23 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
 
                 for i in candidates[1:]:
                     f = line_fields[i]
-                    if not f or f not in _KNOWN_FIELDS:
+                    if not f or (not has_explicit_identity and f not in _KNOWN_FIELDS):
                         # Plain item name (or unlabelled entry) at min_child_indent starts a new entry
                         entry_starts.append(i)
                         seen_in_curr = set()
                         continue
                     is_repeated = f in seen_in_curr
+                    is_identity = f in _IDENTITY_FIELDS
                     is_identity_after_status = (
-                        f in _IDENTITY_FIELDS
+                        is_identity
                         and bool(seen_in_curr & _STATUS_FIELDS)
                     )
-                    if is_repeated or is_identity_after_status:
+                    if is_repeated or is_identity or is_identity_after_status:
                         entry_starts.append(i)
-                        seen_in_curr = {f}
+                        seen_in_curr = {f} if f in _KNOWN_FIELDS else set()
                     else:
-                        seen_in_curr.add(f)
+                        if f in _KNOWN_FIELDS:
+                            seen_in_curr.add(f)
 
             e_start = entry_starts[0]
             for s in entry_starts:
@@ -1371,19 +1387,53 @@ def _extract_markdown_recovered_content(block: str) -> str:
         re.IGNORECASE,
     )
 
+    def _count_quote_depth(l: str) -> int:
+        d = 0
+        for ch in l.strip():
+            if ch == ">":
+                d += 1
+            elif ch in (" ", "\t"):
+                continue
+            else:
+                break
+        return d
+
+    # Determine structural heading quote depth (#296, Codex comment 3965487929).
+    # In canonical handoffs, document headings appear at base quote depth (typically 0, or 1
+    # if the entire block is quoted by the host), while recovered content lines are quoted deeper.
+    # Quoted content lines that resemble headings (e.g. '> ## Warnings') must not terminate extraction.
+    candidate_depths: list[int] = []
     for line in lines:
         stripped = line.strip()
-        header_text = stripped.lstrip("> ").strip()
-        if content_heading_re.match(header_text):
-            in_content_section = True
+        if not stripped:
             continue
-        elif stop_heading_re.match(header_text):
-            in_content_section = False
+        text_after_quotes = stripped.lstrip("> ").strip()
+        if text_after_quotes.startswith("#") and (
+            content_heading_re.match(text_after_quotes)
+            or stop_heading_re.match(text_after_quotes)
+        ):
+            candidate_depths.append(_count_quote_depth(stripped))
+
+    structural_depth = min(candidate_depths) if candidate_depths else 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
             continue
+        depth = _count_quote_depth(stripped)
+        text_after_quotes = stripped.lstrip("> ").strip()
+
+        if depth == structural_depth and text_after_quotes.startswith("#"):
+            if content_heading_re.match(text_after_quotes):
+                in_content_section = True
+                continue
+            else:
+                in_content_section = False
+                continue
 
         if in_content_section:
-            if stripped.startswith(">"):
-                text = stripped.lstrip("> ").strip()
+            if depth > structural_depth:
+                text = text_after_quotes
                 if re.match(r"^\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*$", text, re.IGNORECASE):
                     continue
                 if re.match(r"^`\[W_[A-Z0-9_]+\]`$", text):
@@ -1392,7 +1442,7 @@ def _extract_markdown_recovered_content(block: str) -> str:
                     continue
                 if text:
                     content_lines.append(text)
-            elif stripped and not stripped.startswith("#"):
+            elif not stripped.startswith("#"):
                 content_lines.append(stripped)
 
     return " ".join(content_lines)
