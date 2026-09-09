@@ -1195,10 +1195,19 @@ def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
     # 3. Case B: Indented hierarchy under a single header or item name
     # Line 0 is at indent 0, and ALL other lines (1..N-1) are indented (> 0)
     if indents[0] == 0 and all(ind > 0 for ind in indents[1:]):
-        # If line 0 is an identity field (e.g. Name: ...), it is the entry itself, not a category header
-        is_category_header = (line_fields[0] not in _IDENTITY_FIELDS)
         min_child_indent = min(indents[1:])
         child_item_indices = [i for i, ind in enumerate(indents) if ind == min_child_indent]
+        # Distinguish indented property fields from sibling entries (Codex comment 3965189288).
+        # If the child lines at min_child_indent are recognized attribute fields (status, state, version, etc.),
+        # line 0 is an item with indented properties, not a category header.
+        has_property_fields = any(
+            line_fields[i] in (_STATUS_ATTR_FIELDS | _METADATA_FIELDS | _STATUS_FIELDS)
+            for i in child_item_indices
+        )
+        is_category_header = (
+            line_fields[0] not in _IDENTITY_FIELDS
+            and not has_property_fields
+        )
         if is_category_header and len(child_item_indices) >= 2:
             # Multiple sibling items under a category header at line 0
             if rel_idx == 0:
@@ -1558,15 +1567,22 @@ def evaluate_explicit_activation(
 
             extracted_source: str | None = None
             extracted_session: str | None = None
-            src_match = re.search(r"(?i)(?:>\s*-\s*)?source\s*:\s*[`'\"]?([a-zA-Z0-9_-]+)[`'\"]?", block)
+            src_match = re.search(
+                r"""(?i)(?:>\s*-\s*)?source\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([a-zA-Z0-9_-]+))""",
+                block,
+            )
             if src_match:
-                extracted_source = src_match.group(1).strip("` ")
+                extracted_source = (
+                    src_match.group(1) or src_match.group(2) or src_match.group(3) or src_match.group(4)
+                ).strip()
             sess_match = re.search(
-                r"(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*[`'\"]?([a-zA-Z0-9_.:-]+)[`'\"]?",
+                r"""(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([^\s\r\n`'"]+))""",
                 block,
             )
             if sess_match:
-                extracted_session = sess_match.group(1).strip("` ")
+                extracted_session = (
+                    sess_match.group(1) or sess_match.group(2) or sess_match.group(3) or sess_match.group(4)
+                ).strip()
 
             recovered_text = _extract_markdown_recovered_content(block)
 
@@ -1590,17 +1606,9 @@ def evaluate_explicit_activation(
     # When runner execution was not observed, evaluate diagnostic prerequisites or refusals (#296)
     if not runner_execution_observed:
         # Check for authentication diagnostics on stderr or stdout
-        auth_patterns = (
-            r"\b(?:re-?)?authentication required\b",
-            r"\b(?:re-?)?authenticate\b",
-            r"\b(?:not logged in|login required)\b",
-            r"\bplease (?:log ?in|sign in)\b",
-            r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
-            r"\bunauthorized(?:\:|\b)",
-        )
         err_lower = stderr.lower()
-        if any(re.search(pat, err_lower) for pat in auth_patterns) or any(
-            re.search(pat, out_lower) for pat in auth_patterns
+        if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS) or any(
+            re.search(pat, out_lower) for pat in _AUTH_BLOCKED_PATTERNS
         ):
             obs = ExplicitActivationObservation(
                 host_responded=False,
