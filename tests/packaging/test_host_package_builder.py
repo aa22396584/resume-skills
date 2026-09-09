@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 
 from portable_resume import __version__
@@ -412,6 +413,77 @@ class HostPackageBuilderTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _png_dimensions(data)
 
+    @staticmethod
+    def _png_chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
+    def _png_from_chunks(self, *chunks: tuple[bytes, bytes]) -> bytes:
+        """Assemble a PNG with valid CRCs from explicit (type, body) chunks."""
+
+        return b"\x89PNG\r\n\x1a\n" + b"".join(
+            self._png_chunk(kind, body) for kind, body in chunks
+        )
+
+    def test_png_validation_rejects_structurally_invalid_but_crc_valid_files(self) -> None:
+        """Every case below carries correct CRCs, so only structural checks can reject it."""
+
+        from scripts.build_host_packages import _png_dimensions
+
+        size = 4
+        stride = 1 + size * 4
+        raw = b"".join(b"\x00" + bytes(range(size * 4)) for _ in range(size))
+        idat = zlib.compress(raw, 9)
+
+        def ihdr(depth=8, color=6, compression=0, filt=0, interlace=0, width=size, height=size):
+            return struct.pack(">IIBBBBB", width, height, depth, color, compression, filt, interlace)
+
+        good = self._png_from_chunks((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""))
+        self.assertEqual(_png_dimensions(good), (size, size))
+        # Ancillary chunks and split IDAT are legal; make sure the checks are
+        # structural rather than "anything unusual".
+        split = self._png_from_chunks(
+            (b"IHDR", ihdr()),
+            (b"tEXt", b"Comment\x00synthetic"),
+            (b"IDAT", idat[:10]),
+            (b"IDAT", idat[10:]),
+            (b"IEND", b""),
+        )
+        self.assertEqual(_png_dimensions(split), (size, size))
+
+        bad_filter_row = bytearray(raw)
+        bad_filter_row[stride] = 5  # second scanline uses an undefined filter type
+        cases = {
+            "IHDR compression method 1": ((b"IHDR", ihdr(compression=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR filter method 1": ((b"IHDR", ihdr(filt=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR interlace 2": ((b"IHDR", ihdr(interlace=2)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR Adam7 interlace (unsupported shape)": ((b"IHDR", ihdr(interlace=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR bit depth 3": ((b"IHDR", ihdr(depth=3)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR colour type 5": ((b"IHDR", ihdr(color=5)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR RGBA with bit depth 4": ((b"IHDR", ihdr(depth=4)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR zero width": ((b"IHDR", ihdr(width=0)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR wrong length": ((b"IHDR", ihdr() + b"\x00"), (b"IDAT", idat), (b"IEND", b"")),
+            "duplicate IHDR": ((b"IHDR", ihdr()), (b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b"")),
+            "IDAT before IHDR": ((b"IDAT", idat), (b"IHDR", ihdr()), (b"IEND", b"")),
+            "no IDAT": ((b"IHDR", ihdr()), (b"IEND", b"")),
+            "non-contiguous IDAT": ((b"IHDR", ihdr()), (b"IDAT", idat[:10]), (b"tEXt", b"k\x00v"), (b"IDAT", idat[10:]), (b"IEND", b"")),
+            "non-empty IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b"\x00")),
+            "duplicate IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""), (b"IEND", b"")),
+            "chunk after IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""), (b"tEXt", b"k\x00v")),
+            "IEND not last": ((b"IHDR", ihdr()), (b"IEND", b""), (b"IDAT", idat)),
+            "scanline filter type 5": ((b"IHDR", ihdr()), (b"IDAT", zlib.compress(bytes(bad_filter_row), 9)), (b"IEND", b"")),
+            "inflated size mismatch": ((b"IHDR", ihdr(height=size + 1)), (b"IDAT", idat), (b"IEND", b"")),
+        }
+        for label, chunks in cases.items():
+            with self.subTest(case=label):
+                data = self._png_from_chunks(*chunks)
+                with self.assertRaises(ValueError):
+                    _png_dimensions(data)
+
     def test_render_brand_assets_reproduces_committed_pixels(self) -> None:
         """The committed PNGs decode to exactly what scripts/render_brand_assets.py renders.
 
@@ -427,9 +499,14 @@ class HostPackageBuilderTests(unittest.TestCase):
         )
         self.assertEqual((width, height), (256, 256))
         self.assertEqual(raw, render_brand_assets.render_raw(256))
+        # The website copy must show the same image as the package logo;
+        # compare decoded pixels, not deflate bytes (encoders may differ).
+        self.assertIn("site/assets/logo-512.png", render_brand_assets.ASSETS)
         self.assertEqual(
-            (REPO / "site" / "assets" / "logo-512.png").read_bytes(),
-            (REPO / "assets" / "logo.png").read_bytes(),
+            render_brand_assets.decode_png(
+                (REPO / "site" / "assets" / "logo-512.png").read_bytes()
+            ),
+            render_brand_assets.decode_png((REPO / "assets" / "logo.png").read_bytes()),
         )
 
     def test_offline_contract_rejects_archive_missing_manifest(self) -> None:

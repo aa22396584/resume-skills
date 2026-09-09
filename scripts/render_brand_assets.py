@@ -9,11 +9,12 @@ Design (clean-room, geometric, no vendor material):
 
 ``render_raw`` produces the filtered RGBA scanlines deterministically from pure
 Python arithmetic; ``encode_png`` wraps them in IHDR/IDAT/IEND chunks through
-``zlib`` + ``struct``. The committed ``assets/logo.png`` (512) and
-``assets/icon.png`` (256) were written by this script. ``--check`` decodes the
-committed files and compares their pixel data with a fresh render; pixel data
-is compared rather than compressed bytes because deflate output may differ
-between zlib implementations.
+``zlib`` + ``struct``. The committed ``assets/logo.png`` (512),
+``assets/icon.png`` (256) and the website copy ``site/assets/logo-512.png``
+were written by this script. ``--check`` decodes the committed files and
+compares their pixel data with a fresh render; pixel data is compared rather
+than compressed bytes because deflate output may differ between zlib
+implementations.
 
 Usage:
     python3 scripts/render_brand_assets.py --write   # regenerate both assets
@@ -29,9 +30,12 @@ import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+# Every committed rendering of the mark, by square size. The website copy is
+# the same 512px render as the package logo.
 ASSETS: dict[str, int] = {
     "assets/logo.png": 512,
     "assets/icon.png": 256,
+    "site/assets/logo-512.png": 512,
 }
 GRADIENT_A = (14, 165, 233)  # #0EA5E9 sky-500 (brand colour)
 GRADIENT_B = (99, 102, 241)  # #6366F1 indigo-500
@@ -176,6 +180,7 @@ def check() -> list[str]:
     """Return mismatch descriptions for committed assets (empty when they match)."""
 
     problems: list[str] = []
+    rendered: dict[int, bytes] = {}
     for relative, size in ASSETS.items():
         path = REPO / relative
         if not path.is_file():
@@ -189,14 +194,21 @@ def check() -> list[str]:
         if (width, height) != (size, size):
             problems.append(f"{relative}: expected {size}x{size}, got {width}x{height}")
             continue
-        if raw != render_raw(size):
+        if size not in rendered:
+            rendered[size] = render_raw(size)
+        if raw != rendered[size]:
             problems.append(f"{relative}: pixel data differs from a fresh render")
     return problems
 
 
 def write() -> None:
+    """Regenerate every committed asset; same-size copies get identical bytes."""
+
+    encoded: dict[int, bytes] = {}
     for relative, size in ASSETS.items():
-        (REPO / relative).write_bytes(render(size))
+        if size not in encoded:
+            encoded[size] = render(size)
+        (REPO / relative).write_bytes(encoded[size])
 
 
 def main(argv: list[str] | None = None) -> int:

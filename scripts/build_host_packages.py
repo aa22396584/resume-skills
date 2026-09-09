@@ -81,13 +81,24 @@ def _json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _png_dimensions(data: bytes) -> tuple[int, int]:
-    """Return (width, height) of a structurally complete PNG; fail closed otherwise.
+# PNG (ISO/IEC 15948) IHDR constraints: allowed bit depths per colour type,
+# compression method 0 (deflate), filter method 0 (adaptive), interlace 0/1.
+_PNG_BIT_DEPTHS: dict[int, frozenset[int]] = {
+    0: frozenset({1, 2, 4, 8, 16}),
+    2: frozenset({8, 16}),
+    3: frozenset({1, 2, 4, 8}),
+    4: frozenset({8, 16}),
+    6: frozenset({8, 16}),
+}
+_PNG_SCANLINE_FILTERS = frozenset({0, 1, 2, 3, 4})
 
-    Walks every chunk, verifies each CRC-32, requires IHDR first and IEND last
-    with nothing trailing, and requires the IDAT stream to inflate to exactly
-    ``height * (1 + width * 4)`` bytes for the 8-bit RGBA, non-interlaced
-    images the brand assets use, so a truncated or corrupted asset never ships.
+
+def _png_chunks(data: bytes) -> list[tuple[bytes, bytes]]:
+    """Split a PNG into (type, body) chunks, verifying CRCs and the IEND close.
+
+    Requires the signature, exactly one IHDR as the first chunk, exactly one
+    IEND as the last chunk with an empty body and no bytes after it, and at
+    least one IDAT with all IDAT chunks contiguous.
     """
 
     if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
@@ -109,27 +120,58 @@ def _png_dimensions(data: bytes) -> tuple[int, int]:
         offset += 12 + length
         if kind == b"IEND":
             break
-    if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND":
+    kinds = [kind for kind, _ in chunks]
+    if not chunks or kinds[0] != b"IHDR" or kinds[-1] != b"IEND":
         raise ValueError("brand asset PNG must start with IHDR and end with IEND")
+    if kinds.count(b"IHDR") != 1 or kinds.count(b"IEND") != 1:
+        raise ValueError("brand asset PNG must have exactly one IHDR and one IEND")
+    if chunks[-1][1]:
+        raise ValueError("brand asset PNG IEND must be empty")
     if offset != len(data):
         raise ValueError("brand asset PNG has trailing bytes after IEND")
+    idat_positions = [index for index, kind in enumerate(kinds) if kind == b"IDAT"]
+    if not idat_positions:
+        raise ValueError("brand asset PNG has no IDAT data")
+    if idat_positions[-1] - idat_positions[0] + 1 != len(idat_positions):
+        raise ValueError("brand asset PNG IDAT chunks must be contiguous")
+    return chunks
+
+
+def _png_dimensions(data: bytes) -> tuple[int, int]:
+    """Return (width, height) of a structurally valid PNG; fail closed otherwise.
+
+    Beyond ``_png_chunks`` (CRCs, chunk order and multiplicity), this checks the
+    IHDR field values against the specification, then applies the brand-asset
+    shape (8-bit RGBA, non-interlaced), inflates the IDAT stream to exactly
+    ``height * (1 + width * 4)`` bytes, and requires every scanline filter byte
+    to be one of the five defined filter types.
+    """
+
+    chunks = _png_chunks(data)
     ihdr = chunks[0][1]
     if len(ihdr) != 13:
         raise ValueError("brand asset PNG IHDR is malformed")
-    width, height, depth, color_type, _, _, interlace = struct.unpack(
-        ">IIBBBBB", ihdr
+    width, height, depth, color_type, compression, filter_method, interlace = (
+        struct.unpack(">IIBBBBB", ihdr)
     )
+    if width == 0 or height == 0:
+        raise ValueError("brand asset PNG has zero dimensions")
+    if color_type not in _PNG_BIT_DEPTHS or depth not in _PNG_BIT_DEPTHS[color_type]:
+        raise ValueError("brand asset PNG has an invalid bit depth / colour type")
+    if compression != 0 or filter_method != 0 or interlace not in (0, 1):
+        raise ValueError("brand asset PNG has invalid IHDR method fields")
     if (depth, color_type, interlace) != (8, 6, 0):
         raise ValueError("brand asset PNG must be 8-bit RGBA, non-interlaced")
     idat = b"".join(body for kind, body in chunks if kind == b"IDAT")
-    if not idat:
-        raise ValueError("brand asset PNG has no IDAT data")
     try:
         raw = zlib.decompress(idat)
     except zlib.error as error:
         raise ValueError("brand asset PNG image data does not inflate") from error
-    if len(raw) != height * (1 + width * 4):
+    stride = 1 + width * 4
+    if len(raw) != height * stride:
         raise ValueError("brand asset PNG image data has the wrong size")
+    if any(raw[row * stride] not in _PNG_SCANLINE_FILTERS for row in range(height)):
+        raise ValueError("brand asset PNG has an invalid scanline filter type")
     return int(width), int(height)
 
 
@@ -161,8 +203,9 @@ def _long_description() -> str:
         f"supported source ({len(sources)} sources: {titles}) reads that "
         "agent's own on-disk session store, selects the newest session "
         "recorded for the current working directory where the source records "
-        "one (sessions without a recorded directory stay eligible, and "
-        "OpenHands has no directory filter), and prints an inert, best-effort "
+        "one (a session without a recorded directory may remain eligible, "
+        "depending on the adapter, and OpenHands has no directory filter), "
+        "and prints an inert, best-effort "
         "redacted markdown handoff that the destination agent reads as data "
         "and summarizes; during a skill invocation the host and its model "
         "provider receive that output directly. Everything runs locally with "
