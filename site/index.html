@@ -22,7 +22,7 @@
   <section class="hero wrap">
     <img src="assets/logo.svg" alt="Portable Resume logo">
     <h1>Pick up your <em>last session</em>.<br>Offline. Inert. Local only.</h1>
-    <p class="lead">Portable Resume is a set of Agent Skills for <b>Claude Code</b>, <b>Codex</b>, <b>Grok Build</b>, <b>Cursor</b> and other local coding agents. Each <code>resume-&lt;source&gt;</code> skill reads that agent's own on-disk session store and prints an inert, best-effort-redacted handoff you paste into a fresh session. It never restores a live process.</p>
+    <p class="lead">Portable Resume is a set of Agent Skills for <b>Claude Code</b>, <b>Codex</b>, <b>Grok Build</b>, <b>Cursor</b> and other local coding agents. Each <code>resume-&lt;source&gt;</code> skill reads that agent's own on-disk session store and prints an inert, best-effort-redacted handoff that the fresh session summarizes and continues from. It never restores a live process.</p>
     <div class="badges">
       <span class="badge"><b>17</b> session sources</span>
       <span class="badge"><b>18</b> destination hosts</span>
@@ -40,7 +40,7 @@
     <div class="grid">
       <div class="card"><h3>Reads, never writes</h3><p>Source session stores are opened read-only with stable, no-follow reads that fail closed on races. The reader never invokes the source agent's CLI and never modifies its files.</p></div>
       <div class="card"><h3>Local only</h3><p>No network path, no credentials, no MCP server, no scheduler, no background service. The only optional child process is a trusted <code>zstd</code> decoder for compressed Codex rollouts.</p></div>
-      <div class="card"><h3>Inert handoff</h3><p>Recovered text is marked untrusted and stale, and redaction is best-effort rather than complete data-loss prevention. You review the handoff before it enters a new session.</p></div>
+      <div class="card"><h3>Inert handoff</h3><p>Recovered text is marked untrusted and stale, and redaction is best-effort rather than complete data-loss prevention. When a host invokes the skill, the host and its model provider receive the handoff output directly; run the reader in a terminal if you want to review it first.</p></div>
       <div class="card"><h3>Fresh session, not live restore</h3><p>This is context migration. It does not resume a running process, replay tool calls, or restore host state.</p></div>
     </div>
 
@@ -48,9 +48,12 @@
     <h2>One reader, one handoff</h2>
     <div class="flow">start a fresh session in the same repository
   →  invoke resume-&lt;source&gt; (for example /resume-claude or $resume-codex)
-  →  the bundled reader selects the session that matches the current directory
-  →  it prints an inert markdown handoff (or writes it to a file you name)
-  →  you review, trim, and continue</div>
+  →  the bundled reader picks the newest session for the current directory
+     (where the source records one; see the privacy page for unscoped sources)
+  →  it prints an inert markdown handoff to stdout (or to a file you name)
+  →  the host agent reads that output as data and summarizes it for you
+  →  you verify the summary against the repository and continue</div>
+    <p class="note">Running the reader yourself in a terminal (<code>portable-resume &lt;source&gt; show latest</code>) keeps the handoff on your machine until you decide what to paste. Inside a host skill invocation the host, and therefore its model provider, receives the handoff output directly; see <a href="privacy/">Privacy</a>.</p>
 
     <div class="eyebrow">Sources</div>
     <h2>Seventeen session stores</h2>
@@ -95,7 +98,7 @@ $resume-codex           # Codex
 
 # The skill runs only the bundled reader, for example:
 python3 &lt;skill&gt;/scripts/run_reader.py show latest --cwd "$PWD"</pre>
-    <p class="note">The reader selects the session that matches the current working directory, prints an inert handoff, and exits. Structured diagnostics and exit codes are listed in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/diagnostics.md">docs/diagnostics.md</a>.</p>
+    <p class="note">The reader selects the newest session recorded for the current working directory where the source records one (sessions without a recorded directory stay eligible, and <code>resume-openhands</code> has no directory filter at all), prints an inert handoff, and exits. Structured diagnostics and exit codes are listed in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/diagnostics.md">docs/diagnostics.md</a>.</p>
 
     <div class="eyebrow">Honesty</div>
     <h2>What is verified, what is not</h2>

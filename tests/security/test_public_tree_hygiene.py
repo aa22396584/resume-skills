@@ -43,8 +43,8 @@ class PublicTreeHygieneTests(unittest.TestCase):
             path = Path(rel)
             if not path.is_file():
                 continue
-            # allow binary fixtures and brand images without text scan
-            if path.suffix in {".sqlite", ".vscdb", ".zst", ".png", ".jpg"}:
+            # allow binary fixtures without text scan
+            if path.suffix in {".sqlite", ".vscdb", ".zst"}:
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             for pat in FORBIDDEN:

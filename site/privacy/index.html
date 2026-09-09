@@ -22,7 +22,10 @@
   <p>Portable Resume runs entirely on your machine. The project operates no backend, account system, analytics, advertising or telemetry collector. Nothing in the skills, the bundled reader or the installer sends data anywhere.</p>
 
   <h2>What the skill reads</h2>
-  <p>When you invoke a <code>resume-&lt;source&gt;</code> skill, the bundled reader opens the local session store that the named coding agent keeps under your home directory, for example Claude Code's <code>~/.claude/projects</code> JSONL files, Codex's SQLite state and rollouts, Cursor's chat and state databases, Grok Build's session updates, or Gemini CLI's session JSONL. It reads only the sessions that match the current working directory and only within bounded byte and record budgets. It reads other agents' stores; it never modifies them. Reads are stable and no-follow and fail closed when a file changes underneath them.</p>
+  <p>When you invoke a <code>resume-&lt;source&gt;</code> skill, the bundled reader opens the local session store that the named coding agent keeps under your home directory, for example Claude Code's <code>~/.claude/projects</code> JSONL files, Codex's SQLite state and rollouts, Cursor's chat and state databases, Grok Build's session updates, or Gemini CLI's session JSONL. It reads other agents' stores; it never modifies them. Reads are bounded by byte and record budgets, are stable and no-follow, and fail closed when a file changes underneath them.</p>
+
+  <h2>Workspace filtering is source-dependent</h2>
+  <p>The reader passes your current working directory to the source adapter, and adapters whose store records a working directory (Claude Code, Codex, Cursor, Grok Build, Gemini CLI and most others) select only sessions recorded for that directory. This is not a universal guarantee: a session with no recorded working directory stays eligible because the store cannot prove a mismatch, and some sources record no working directory at all, notably OpenHands (its event files carry no directory field, so <code>resume-openhands</code> ignores the directory filter). For those sources, <code>latest</code> can return the most recent session on the machine regardless of project. The handoff header states the source, session identifier and any recorded directory; check it before relying on the content, and use <code>list</code> or an exact session identifier when the workspace matters.</p>
 
   <h2>What it never does</h2>
   <ul>
@@ -34,10 +37,15 @@
   </ul>
 
   <h2>Where the handoff goes</h2>
-  <p>The reader prints the handoff to your terminal, or writes it to a local file you name with <code>--output</code>. That text stays on your machine until you paste it into a new session. Once you do, your host agent (Claude Code, Codex, Grok Build, Cursor or another) sends it to its model provider as part of normal operation, under that provider's policies. Portable Resume does not change that behaviour. Review and trim the handoff before pasting it.</p>
+  <p>The reader itself only prints the handoff to standard output, or writes it to a local file you name with <code>--output</code>. Portable Resume never transmits it. Who then sees that text depends on how you run the reader:</p>
+  <ul>
+    <li><strong>Direct terminal use</strong> (<code>portable-resume &lt;source&gt; show latest</code> or <code>run_reader.py</code> in your shell): the text stays on your machine until you choose to paste it somewhere.</li>
+    <li><strong>Skill invocation inside a host agent</strong> (<code>/resume-claude</code>, <code>$resume-codex</code> and similar): the skill instructs the host to run the reader and read its output as data, so the host agent receives the handoff and sends it to its model provider as part of normal operation, under that host's own privacy terms (Anthropic, OpenAI, xAI, Cursor or another vendor). This happens before you see a summary; there is no manual review step between the reader and the model in that flow.</li>
+  </ul>
+  <p>If a session must not reach a model provider, run the reader directly, review the output, and only then decide what to paste. The handoff also carries a checklist asking the destination agent to summarize rather than repeat recovered text.</p>
 
   <h2>Redaction is best effort</h2>
-  <p>The reader masks common credential shapes (API keys, tokens, private-key headers) before printing. This is best-effort redaction, not complete data-loss prevention: transcripts can contain secrets in shapes the filter does not recognise. Recovered text is labelled untrusted and stale so that you and the destination agent treat it as data, not as instructions.</p>
+  <p>The reader masks common credential shapes (API keys, tokens, private-key headers) before printing. This is best-effort redaction, not complete data-loss prevention: transcripts can contain secrets in shapes the filter does not recognise, and during skill invocation whatever survives redaction reaches the host's model provider. Recovered text is labelled untrusted and stale so that you and the destination agent treat it as data, not as instructions.</p>
 
   <h2>The installer</h2>
   <p><code>install-resume-skills</code> writes only under the skill root you select for a host, keeps an ownership claim and journal there for rollback, and refuses to overwrite files it does not own unless you pass an explicit backup flag. It does not read session stores.</p>
