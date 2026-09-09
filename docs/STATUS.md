@@ -1,10 +1,9 @@
-# Project status (2026-08-15)
+# Project status (2026-09-09)
 
-## Current release: 0.4.3
+## Current release: 0.4.4
 
-Current `main` carries the untagged `0.4.4` release candidate (vendor-curated
-directory submission preparation; `v0.4.4` is not tagged or published yet)
-after publishing immutable `v0.4.3`.
+Current `main` advances to `0.4.5.dev0` after publishing immutable `v0.4.4`
+([release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738)).
 It no longer reuses immutable published `v0.3.4` as the package base. Explicit build/release tooling includes Git
 state plus deterministic registry/source digests. One canonical pre-build pin is
 embedded byte-for-byte in wheel, sdist, all 18 direct-host ZIPs, and all eight
@@ -32,13 +31,13 @@ actors. The separate optional trusted-zstd reader boundary remains documented in
 | Public marketplace installation | **6/6 compatible hosts pass on v0.3.2**; fresh through **0.4.1** host reinstall **not-run** |
 | Visual marketplace picker | **Cursor and Kimi pass on v0.3.2**; fresh through **0.4.1** picker flow **not-run** |
 | Other visual Skill picker activation | **not-run** |
-| Vendor-curated directory listing | **submission prepared in 0.4.4** (manifests, brand assets, plugin-root bundle, public policy pages); **not yet submitted or listed** — see the listing tracker below |
+| Vendor-curated directory listing | **OpenAI submitted 2026-09-09**; Claude Code and xAI **submission in progress**; **nothing listed yet** — see the listing tracker below |
 | CI (v0.3.4 release commit @ `fa1344b`) | **pass**: [Ubuntu + macOS × Python 3.11–3.14 + dist smoke](https://github.com/ImL1s/resume-skills/actions/runs/30269684151) |
 | Phase 0 / Milestone N1 | **merged** [PR #49](https://github.com/ImL1s/resume-skills/pull/49) → `7b5192c` |
 | `v0.3.4` release workflow | **pass**: [14 jobs through GitHub Release and PyPI](https://github.com/ImL1s/resume-skills/actions/runs/30269713516) |
-| Published release | **pass**: [GitHub Release v0.4.3](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3) (prior [v0.4.2](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.2) / [v0.4.1](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1) / [v0.4.0](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.0) / [v0.3.4](https://github.com/ImL1s/resume-skills/releases/tag/v0.3.4) remain historical) |
-| Public PyPI installation | **pass for 0.4.3** ([portable-resume 0.4.3](https://pypi.org/project/portable-resume/0.4.3/), 306-cell artifact); prior `0.4.2` / `0.4.1` / `0.4.0` / `0.3.4` remain historical |
-| Public marketplace catalog | **synced** [`portable-resume-marketplace@7833e4a`](https://github.com/ImL1s/portable-resume-marketplace/commit/7833e4a3628213f78eb8458f30e9873d43a95fa6) / [marketplace `v0.3.4`](https://github.com/ImL1s/portable-resume-marketplace/releases/tag/v0.3.4); fresh through **0.4.1** host reinstall **not-run** |
+| Published release | **pass**: [GitHub Release v0.4.4](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4) from [release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738) (prior [v0.4.3](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3) / [v0.4.2](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.2) / [v0.4.1](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1) / [v0.4.0](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.0) / [v0.3.4](https://github.com/ImL1s/resume-skills/releases/tag/v0.3.4) remain historical) |
+| Public PyPI installation | **pass for 0.4.4** ([portable-resume 0.4.4](https://pypi.org/project/portable-resume/0.4.4/), Trusted Publishing in run 34364157738, 306-cell artifact); prior `0.4.3` / `0.4.2` / `0.4.1` / `0.4.0` / `0.3.4` remain historical |
+| Public marketplace catalog | **synced to v0.4.4** at [`portable-resume-marketplace@c07b97c`](https://github.com/ImL1s/portable-resume-marketplace/commit/c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd) (sync run 34366389130; Claude, Codex, Cursor, Kimi and the new Grok `plugins/grok/portable-resume` tree); fresh through **0.4.4** host reinstall **not-run** |
 | Cursor full bubble graph | **not claimed** |
 | Codex large-rollout budget + parent list filter (Issue #3) | **done on main** [PR #4](https://github.com/ImL1s/resume-skills/pull/4) merge `48746c4` — P0 hotfix (not full streaming) |
 | Codex probe head-only + list FS fallback | **done on PR #93** — [Issue #7](https://github.com/ImL1s/resume-skills/issues/7) + [plan 026](../plans/026-codex-probe-list-discovery.md); byte-bounded head, soft probe sample, sparse/stale FS merge+rank. Residual P2: cap head parse by record count not only bytes (non-blocking). |
@@ -62,9 +61,11 @@ is sent, and to **listed** only after a public readback.
 
 | Directory | Target artifact | Status |
 |---|---|---|
-| OpenAI Plugins Directory (Codex / ChatGPT) | `portable-resume-0.4.4-codex-plugin.zip` from the `v0.4.4` GitHub Release | **not submitted** (requires the published release) |
-| Claude Code community marketplace | [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace) synced to `v0.4.4` | **not submitted** (requires the marketplace sync) |
-| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | catalog entry pinned to a release-synced marketplace commit, `path` = `plugins/grok/portable-resume` | **not submitted** (requires the marketplace sync) |
+| GitHub Release `v0.4.4` | [release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738) | **published** 2026-09-09 |
+| PyPI `portable-resume 0.4.4` | Trusted Publishing in the same run | **published** 2026-09-09 |
+| OpenAI Plugins Directory (Codex / ChatGPT) | `portable-resume-0.4.4-codex-plugin.zip` from the `v0.4.4` GitHub Release | **submitted 2026-09-09** (submission `appsub_6aa170bfa9708191828f4c437b8191b6`); vendor review pending, **not listed** |
+| Claude Code community marketplace | [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace) synced to `v0.4.4` at `c07b97c` | **submission in progress**; **not listed** |
+| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | catalog entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submission in progress**; **not listed** |
 
 ## PR #49 AI review disposition (closed for merge)
 
@@ -234,12 +235,13 @@ Codex/multi-CLI merge blockers on [PR #49](https://github.com/ImL1s/resume-skill
 | Public marketplace host install | 6/6 compatible hosts pass on v0.3.2; fresh through 0.4.1 not-run | install rows and `docs/evidence/public-marketplace-v0.3.2.json` |
 | Visual marketplace picker | Cursor and Kimi pass on v0.3.2; fresh through 0.4.1 not-run | interactive selection rows in `docs/host-ui-smoke.md` |
 | Other visual Skill pickers | not-run | per-host interactive picker evidence |
-| Vendor-curated directory listing | submission prepared in 0.4.4; not yet submitted or listed | authenticated vendor submission/readback (listing tracker above) |
+| Vendor-curated directory listing | OpenAI submitted 2026-09-09; Claude Code / xAI submission in progress; nothing listed | authenticated vendor submission/readback (listing tracker above) |
 | Cursor graph completeness | not claimed | upstream schema/recovery work beyond current best effort |
 
 The latest published GitHub release is
-[`v0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3)
-([PyPI 0.4.3](https://pypi.org/project/portable-resume/0.4.3/)); prior
+[`v0.4.4`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4)
+([PyPI 0.4.4](https://pypi.org/project/portable-resume/0.4.4/)); prior
+[`v0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3),
 [`v0.4.2`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.2),
 [`v0.4.1`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1),
 [`v0.4.0`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.0) and

@@ -201,9 +201,16 @@ class DocumentationI18nTests(unittest.TestCase):
             shutil.copy2(REPO / "README.md", root / "README.md")
             shutil.copy2(REPO / "CHANGELOG.md", root / "CHANGELOG.md")
             shutil.copytree(REPO / "docs", root / "docs")
+            published = json.loads(
+                (REPO / "src" / "portable_resume" / "resources" / "latest-release.json")
+                .read_text(encoding="utf-8")
+            )["tag"]
+            current_link = f"releases/tag/{published}"
+            stale_link = "releases/tag/v0.0.1"
             zh_path = root / "docs" / "i18n" / "zh-TW.md"
+            self.assertIn(current_link, zh_path.read_text(encoding="utf-8"))
             zh_text = zh_path.read_text(encoding="utf-8").replace(
-                "releases/tag/v0.4.3", "releases/tag/v0.4.1"
+                current_link, stale_link
             )
             zh_path.write_text(zh_text, encoding="utf-8")
             with mock.patch.object(check_docs, "REPO", root):
@@ -215,12 +222,13 @@ class DocumentationI18nTests(unittest.TestCase):
 
             # Test index README.md stale link
             zh_path.write_text(
-                zh_text.replace("releases/tag/v0.4.1", "releases/tag/v0.4.3"),
+                zh_text.replace(stale_link, current_link),
                 encoding="utf-8",
             )
             idx_path = root / "docs" / "i18n" / "README.md"
+            self.assertIn(current_link, idx_path.read_text(encoding="utf-8"))
             idx_text = idx_path.read_text(encoding="utf-8").replace(
-                "releases/tag/v0.4.3", "releases/tag/v0.4.1"
+                current_link, stale_link
             )
             idx_path.write_text(idx_text, encoding="utf-8")
             with mock.patch.object(check_docs, "REPO", root):

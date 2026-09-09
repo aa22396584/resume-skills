@@ -1,0 +1,18 @@
+# Normalize every text file to LF in the repository and on checkout (all
+# platforms), so release archives never carry CRLF payloads again.
+* text=auto eol=lf
+
+# Binary fixtures and assets: never normalized, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.zip binary
+*.zst binary
+*.sqlite binary
+*.vscdb binary
+*.db binary
+*-journal binary
+*.whl binary
+*.tar.gz binary

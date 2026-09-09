@@ -54,6 +54,34 @@ class PublicTreeHygieneTests(unittest.TestCase):
                     hits.append(f"{rel}: {pat.pattern}")
         self.assertEqual(hits, [], msg="public tree leaks local paths/secrets:\n" + "\n".join(hits[:50]))
 
+    def test_tracked_text_files_use_lf_line_endings(self) -> None:
+        """No CR byte in any tracked text file.
+
+        v0.4.4 shipped seven CRLF files inside the release ZIPs (they broke the
+        marketplace mirror's whitespace gate). .gitattributes now normalizes to
+        LF; this test fails closed if CRLF is ever committed again. Binary
+        files (NUL byte present) are skipped.
+        """
+
+        listed = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+        offenders: list[str] = []
+        for rel in listed:
+            path = Path(rel)
+            if not path.is_file():
+                continue
+            payload = path.read_bytes()
+            if b"\x00" in payload:
+                continue
+            if b"\r" in payload:
+                offenders.append(rel)
+        self.assertEqual(offenders, [], msg="tracked text files contain CR bytes:\n" + "\n".join(offenders))
+
+    def test_gitattributes_enforces_lf(self) -> None:
+        text = Path(".gitattributes").read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^\* text=auto eol=lf$")
+        for suffix in ("png", "jpg", "sqlite", "vscdb", "zst", "zip"):
+            self.assertRegex(text, rf"(?m)^\*\.{suffix} binary$")
+
     def test_research_logs_are_not_tracked(self) -> None:
         listed = set(subprocess.check_output(["git", "ls-files"], text=True).splitlines())
         offenders = [p for p in listed if p.startswith(".omc/research/") and p.endswith((".log", ".md"))]

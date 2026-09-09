@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import unittest
 from pathlib import Path
 
@@ -150,7 +152,15 @@ class StatusHonestyTests(unittest.TestCase):
         self.assertIn("v0.3.2", readme_opening)
         compact_readme = " ".join(readme_opening.replace("**", "").split())
         # Current honesty boundary: fresh through last published tip remains not-run.
-        self.assertRegex(compact_readme, r"(?i)fresh through 0\.4\.3.*not-run")
+        published = json.loads(
+            Path("src/portable_resume/resources/latest-release.json").read_text(
+                encoding="utf-8"
+            )
+        )["version"]
+        self.assertRegex(
+            compact_readme,
+            r"(?i)fresh through " + re.escape(published) + r".*not-run",
+        )
 
         host = Path("docs/host-support.md").read_text(encoding="utf-8")
         for label in (
