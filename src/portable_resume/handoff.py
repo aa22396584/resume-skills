@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from .bounds import DEFAULT_BOUNDS
+from .decision_rationale import extract_decision_snippets
 from .diagnostics import DiagnosticError
 from .model import Candidate, Envelope, Session, Turn
 from .sanitize import sanitize_inline, validate_structural_identity
@@ -46,6 +47,12 @@ _TURN_DROP_WARNING_NOTICE = (
 _BODY_TRUNCATION_NOTICE = (
     "> `[W_TRUNCATED]` one or more recovered text bodies were shortened before display."
 )
+RATIONALE_HEADING = "### Recovered rejected approaches and why"
+_RATIONALE_DISCLAIMER = (
+    "> Phrase-scan of recovered user/assistant text only. Not a reconstructed "
+    "decision tree. Absence here does not mean nothing was tried and dropped."
+)
+_RATIONALE_EMPTY = "> _(no rejection/rationale phrases recovered)_"
 
 
 def _value(value: str | None) -> str:
@@ -252,6 +259,17 @@ def _minimal_action_lines(turn: Turn | None) -> list[str]:
     return [f"> **{_turn_label(turn)}**", "> `[W_TRUNCATED]`"]
 
 
+def _rationale_block(turns: tuple[Turn, ...]) -> list[str]:
+    lines = ["", RATIONALE_HEADING, _RATIONALE_DISCLAIMER]
+    snippets = extract_decision_snippets(turns)
+    if not snippets:
+        lines.append(_RATIONALE_EMPTY)
+        return lines
+    for snippet in snippets:
+        lines.extend(_quote(snippet))
+    return lines
+
+
 def _assemble(
     session: Session,
     *,
@@ -293,6 +311,7 @@ def _assemble(
             body_truncated=body_truncated,
         )
     )
+    lines.extend(_rationale_block(session.turns))
     lines.append("")
     lines.append("### Bounded transcript evidence")
     if dropped_turns:

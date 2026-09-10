@@ -35,6 +35,7 @@ _RUNTIME_MODULES = (
     "build_identity.py",
     "contracts.py",
     "config_layer.py",
+    "decision_rationale.py",
     "diagnostics.py",
     "discover_doctor.py",
     "handoff.py",
