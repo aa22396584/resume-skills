@@ -38,6 +38,60 @@ class DecisionRationaleTests(unittest.TestCase):
             ("Do not use GIT_AUTHOR_EMAIL=codex@example.com.",),
         )
 
+    def test_capped_snippet_keeps_late_cue(self) -> None:
+        turns = (
+            Turn(
+                0,
+                "assistant",
+                ("x" * 300) + " instead of sqlite because the dump is locked",
+            ),
+        )
+        snippets = extract_decision_snippets(turns)
+        self.assertEqual(len(snippets), 1)
+        self.assertIn("instead of sqlite", snippets[0])
+        self.assertNotEqual(snippets[0], "x" * 240)
+
+    def test_long_lines_with_shared_prefix_are_not_collapsed(self) -> None:
+        prefix = "x" * 240
+        turns = (
+            Turn(0, "assistant", prefix + " instead of a because the dump is locked"),
+            Turn(1, "assistant", prefix + " instead of b because the wal is live"),
+        )
+        snippets = extract_decision_snippets(turns)
+        joined = "\n".join(snippets)
+        self.assertIn("instead of a", joined)
+        self.assertIn("instead of b", joined)
+        self.assertEqual(len(snippets), 2)
+
+    def test_tilde_fences_are_skipped(self) -> None:
+        turns = (
+            Turn(
+                0,
+                "assistant",
+                "~~~\ninstead of matching this\n~~~\nDo not use GIT_AUTHOR_EMAIL=codex@example.com.",
+            ),
+        )
+        snippets = extract_decision_snippets(turns)
+        self.assertEqual(
+            snippets,
+            ("Do not use GIT_AUTHOR_EMAIL=codex@example.com.",),
+        )
+
+    def test_nested_triple_backtick_inside_longer_fence_is_skipped(self) -> None:
+        turns = (
+            Turn(
+                0,
+                "assistant",
+                "````markdown\n```\ndo not use --no-verify; that failed\n```\n````\n"
+                "Do not use GIT_AUTHOR_EMAIL=codex@example.com.",
+            ),
+        )
+        snippets = extract_decision_snippets(turns)
+        self.assertEqual(
+            snippets,
+            ("Do not use GIT_AUTHOR_EMAIL=codex@example.com.",),
+        )
+
     def test_cap_and_dedupe_are_deterministic(self) -> None:
         turns = tuple(
             Turn(i, "assistant", f"Instead of option {i} we keep going.")
