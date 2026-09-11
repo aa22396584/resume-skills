@@ -1,8 +1,11 @@
-# Project status (2026-09-09)
+# Project status (2026-09-11)
 
 ## Current release: 0.4.4
 
-Current `main` advances to `0.4.5.dev0` after publishing immutable `v0.4.4`
+Current `main` carries the untagged `0.4.5` release candidate (handoff rejected-
+approach recovery #299/#303, native-evidence hardening #298, Antigravity
+tree-URL install docs #302; `v0.4.5` is not tagged or published yet) after
+publishing immutable `v0.4.4`
 ([release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738)).
 It no longer reuses immutable published `v0.3.4` as the package base. Explicit build/release tooling includes Git
 state plus deterministic registry/source digests. One canonical pre-build pin is
@@ -61,15 +64,22 @@ is sent, and to **listed** only after a public readback. Antigravity: no
 Google directory; community GravityHub submission attempted 2026-09-09,
 blocked by a directory-side GitHub API 401 — retry later; install today with
 the agy command (verified agy 1.1.28, 2026-09-09, see `install-hosts.md`).
+Re-checked 2026-09-11 before the `0.4.5` candidate: unauthenticated OpenAI plugin
+URL is login-walled (no fresh public Version readback this session); xAI PR
+#643 is still **open and conflicting**; GitHub code search of
+`anthropics/claude-plugins-official` and `anthropics/claude-plugins-community`
+has **zero** `portable-resume` hits; GravityHub search does not surface a
+portable-resume listing. Directory version bumps wait for a published
+`v0.4.5` GitHub Release and marketplace sync.
 
 | Directory | Target artifact | Status |
 |---|---|---|
 | GitHub Release `v0.4.4` | [release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738) | **published** 2026-09-09 |
 | PyPI `portable-resume 0.4.4` | Trusted Publishing in the same run | **published** 2026-09-09 |
-| OpenAI Plugins Directory (Codex / ChatGPT) | release-attached `portable-resume-0.4.4-codex-plugin.zip` (SHA256SUMS verified), plugin id `plugins_6aa170bf904c8191b53ab41832adbf95`, submission `appsub_6aa170bfa9708191828f4c437b8191b6` | **published 2026-09-09** (auto-approved after all 17 skills passed the portal scan); readback: [public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95) shows Version 0.4.4, Category Developer Tools, the 17 skills and the three prompts |
-| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | [PR #643 "Add portable-resume (0.4.4)"](https://github.com/xai-org/plugin-marketplace/pull/643), entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submitted 2026-09-09; awaiting xAI review** (PR checks Socket ×2 + semgrep success; not merged, **not listed**) |
-| Antigravity (no Google directory) | community directory [GravityHub](https://www.gravityhub.directory/); install today with `agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume` | **submission attempted 2026-09-09, blocked by a directory-side GitHub API 401** ("Validation failed: GitHub API error fetching …: 401 Unauthorized" for a public repository; retry later); **not submitted, not listed** |
-| Claude Code community marketplace | [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit) form: link [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace), path `plugins/claude/portable-resume`, homepage <https://iml1s.github.io/resume-skills/>, license Apache-2.0, privacy <https://iml1s.github.io/resume-skills/privacy/>, platform Claude Code only | **submitted 2026-09-09** ("Plugin submitted for review"); **pending Anthropic review, not listed** |
+| OpenAI Plugins Directory (Codex / ChatGPT) | release-attached `portable-resume-0.4.4-codex-plugin.zip` (SHA256SUMS verified), plugin id `plugins_6aa170bf904c8191b53ab41832adbf95`, submission `appsub_6aa170bfa9708191828f4c437b8191b6` | **published 2026-09-09** (auto-approved after all 17 skills passed the portal scan); last authenticated readback: [public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95) showed Version 0.4.4, Category Developer Tools, the 17 skills and the three prompts. 2026-09-11 unauthenticated fetch is login-walled — **not re-proven this session**. A 0.4.5 zip update is **not due** until `v0.4.5` publishes |
+| xAI Grok Build marketplace (`xai-org/plugin-marketplace`) | [PR #643 "Add portable-resume (0.4.4)"](https://github.com/xai-org/plugin-marketplace/pull/643), entry pinned to marketplace commit `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd`, `path` = `plugins/grok/portable-resume` | **submitted 2026-09-09; awaiting xAI review**. Re-check 2026-09-11: still **OPEN**, `mergeable=CONFLICTING` / `DIRTY`, Socket+semgrep green, **not merged, not listed**. A 0.4.5 retarget waits for marketplace sync after `v0.4.5` |
+| Antigravity (no Google directory) | community directory [GravityHub](https://www.gravityhub.directory/); install today with `agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume` | **submission attempted 2026-09-09, blocked by a directory-side GitHub API 401** ("Validation failed: GitHub API error fetching …: 401 Unauthorized" for a public repository; retry later). 2026-09-11 GravityHub search did not show portable-resume; **not submitted, not listed** |
+| Claude Code community marketplace | [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit) form: link [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace), path `plugins/claude/portable-resume`, homepage <https://iml1s.github.io/resume-skills/>, license Apache-2.0, privacy <https://iml1s.github.io/resume-skills/privacy/>, platform Claude Code only | **submitted 2026-09-09** ("Plugin submitted for review"); **pending Anthropic review, not listed**. Re-check 2026-09-11: no `portable-resume` in Anthropic official or community plugin repos |
 
 ## PR #49 AI review disposition (closed for merge)
 

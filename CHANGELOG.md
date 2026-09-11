@@ -2,11 +2,25 @@
 
 ## Unreleased
 
+## [0.4.5] — 2026-09-11
+
 - Handoff now surfaces a best-effort **Recovered rejected approaches and why**
-  section (#299): frozen phrase-scan of persisted user/assistant text, quoted
-  only, newest-first, capped. Not a reconstructed decision tree. Skill summary
-  and `handoff-policy.md` tell destination agents to keep that why instead of
-  inventing branch history.
+  section (#299, #303): frozen phrase-scan of persisted user/assistant text,
+  quoted only, newest-first, capped. Cue snippets keep the matched phrase inside
+  the 240-character window; fenced blocks honor matching delimiter runs
+  (including `~~~` and nested longer backtick fences). Not a reconstructed
+  decision tree. Skill summary and `handoff-policy.md` tell destination agents
+  to keep that why instead of inventing branch history.
+- Native evidence collector: treat host CLI auth diagnostics as a prerequisite
+  before nonzero-exit failure and before accepting a discovery token; bind
+  Trace C session IDs to envelope metadata (`## Stale session metadata` or the
+  legacy untrusted header); decode the earliest successful `{`/`[` JSON opener
+  so a banner plus a disabled-target array cannot plaintext-accept (#298).
+  Remaining listing-grammar variants stay deferred.
+- Docs: Antigravity install documents the CLI tree-URL route
+  (`agy plugin install https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume`).
+  GravityHub community-directory submit remains blocked by a directory-side
+  GitHub API 401; not listed (#302).
 
 ## [0.4.4] — 2026-09-09
 

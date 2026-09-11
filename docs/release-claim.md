@@ -128,7 +128,8 @@ separate and require their own rows in
   and evidence in [`evidence-summary.md`](evidence-summary.md) (vendor-curated
   directory submission preparation: Codex `interface` block, Grok
   `.grok-plugin/plugin.json`, plugin-root `codex-plugin` bundle, brand assets,
-  public site). Current `main` advances to `0.4.5.dev0` after this tag.
+  public site). Current `main` carries the untagged `0.4.5` release
+  candidate after this tag; `v0.4.5` is not published yet.
 - `v0.4.3`: **published** from annotated tag at commit
   `4e73b44a02b7643e12545653a8c1953d05d4c7ae`.
   [Release run 31820997135](https://github.com/ImL1s/resume-skills/actions/runs/31820997135)
