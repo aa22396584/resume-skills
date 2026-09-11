@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 宛先 host の構文で `resume-<source>` を有効化し、handoff に従う前に現在の repository を再確認してください。
 
-現在の host スモークでは 8/8 の CLI 呼び出しと、正確なローカルパッケージ 7/7 の導入が成功しました。公開 marketplace 導入は互換性のある 6/6 host で成功し、Cursor と Kimi の marketplace picker も成功しています。その他の視覚的 Skill picker とベンダー選定ディレクトリは未申告です。
+現在の host スモークでは 8/8 の CLI 呼び出しと、正確なローカルパッケージ 7/7 の導入が成功しました。公開 marketplace 導入は互換性のある 6/6 host で成功し、Cursor と Kimi の marketplace picker も成功しています。その他の視覚的 Skill picker は未申告です。OpenAI Plugins Directory は **0.4.5** で掲載済みです。xAI、Claude Code、GravityHub は未掲載です。
 
 これらの host レベル結果は v0.3.2 時点の証拠です。0.4.1 の host 別再インストールと picker フローは **not-run** のままです。
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

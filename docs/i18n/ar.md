@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 فعّل `resume-<source>` بصيغة host الوجهة، وأعد فحص repository الحالي قبل تنفيذ handoff.
 
-نجح اختبار host في 8/8 من استدعاءات CLI وفي 7/7 من عمليات تثبيت الحزم الأصلية المحلية الدقيقة. نجح التثبيت من marketplace العام على 6/6 من hosts المتوافقة، كما نجحت أدوات اختيار marketplace في Cursor وKimi. لا يُدّعى اكتمال أدوات اختيار Skill المرئية الأخرى أو الأدلة المنسقة من الموردين.
+نجح اختبار host في 8/8 من استدعاءات CLI وفي 7/7 من عمليات تثبيت الحزم الأصلية المحلية الدقيقة. نجح التثبيت من marketplace العام على 6/6 من hosts المتوافقة، كما نجحت أدوات اختيار marketplace في Cursor وKimi. لا يُدّعى اكتمال أدوات اختيار Skill المرئية الأخرى. دليل OpenAI Plugins Directory مدرج بإصدار 0.4.5؛ أما xAI وClaude Code وGravityHub فما تزال غير مدرجة.
 
 نتائج مستوى host هذه هي أدلة من حقبة v0.3.2. ما تزال إعادة تثبيت 0.4.1 لكل host ومسارات picker في حالة **not-run**.
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 按目标 host 的语法启用 `resume-<source>`，并在执行交接内容前重新检查当前 repository。
 
-当前 host 冒烟测试已通过 8/8 个 CLI 调用和 7/7 种精确的本地原生软件包安装。公开 marketplace 安装已通过 6/6 个兼容 host，Cursor 与 Kimi 的 marketplace 选择器也已通过。其他可视化 Skill 选择器与厂商精选目录仍未声明完成。
+当前 host 冒烟测试已通过 8/8 个 CLI 调用和 7/7 种精确的本地原生软件包安装。公开 marketplace 安装已通过 6/6 个兼容 host，Cursor 与 Kimi 的 marketplace 选择器也已通过。其他可视化 Skill 选择器仍未声明完成。OpenAI Plugins Directory 已上架 **0.4.5**；xAI、Claude Code 与 GravityHub 仍未上架。
 
 这些 host 级结果属于 v0.3.2 时期证据；经 0.4.1 的逐 host 重新安装与 picker 流程仍为 **not-run**。
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

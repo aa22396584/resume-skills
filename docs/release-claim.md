@@ -224,4 +224,6 @@ retained in
 [`evidence/public-marketplace-v0.3.2.json`](evidence/public-marketplace-v0.3.2.json).
 Other visual Skill pickers, vendor-curated
 Claude/Cursor directory listings, and Cursor full bubble-graph completeness
-remain excluded.
+remain excluded. OpenAI Plugins Directory listing at 0.4.5 is recorded in
+[`STATUS.md`](STATUS.md) / [`evidence-summary.md`](evidence-summary.md), not in
+this release-workflow claim.

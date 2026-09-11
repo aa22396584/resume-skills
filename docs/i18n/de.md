@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 Aktivieren Sie `resume-<source>` mit der Syntax des Ziel-host und prüfen Sie das aktuelle repository erneut, bevor Sie den handoff ausführen.
 
-Der Host-Smoke-Test bestand 8/8 CLI-Aufrufe und 7/7 exakte lokale native Paketinstallationen. Die Installation aus dem öffentlichen Marketplace bestand auf 6/6 kompatiblen Hosts; auch die Marketplace-Picker von Cursor und Kimi bestanden. Andere visuelle Skill-Picker und kuratierte Herstellerverzeichnisse werden nicht als abgeschlossen beansprucht.
+Der Host-Smoke-Test bestand 8/8 CLI-Aufrufe und 7/7 exakte lokale native Paketinstallationen. Die Installation aus dem öffentlichen Marketplace bestand auf 6/6 kompatiblen Hosts; auch die Marketplace-Picker von Cursor und Kimi bestanden. Andere visuelle Skill-Picker werden nicht als abgeschlossen beansprucht. Das OpenAI Plugins Directory ist mit 0.4.5 gelistet; xAI, Claude Code und GravityHub sind nicht gelistet.
 
 Diese Ergebnisse auf Host-Ebene stammen aus der v0.3.2-Evidenz. Die Host-für-Host-Neuinstallation und Picker-Abläufe für 0.4.1 bleiben **not-run**.
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

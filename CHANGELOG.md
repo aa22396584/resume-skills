@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- OpenAI Plugins Directory listing bumped to **0.4.5** (public page
+  readback 2026-09-11). xAI catalog PR, Claude Code review, and GravityHub
+  remain not listed.
+
 ## [0.4.5] — 2026-09-11
 
 - Handoff now surfaces a best-effort **Recovered rejected approaches and why**
