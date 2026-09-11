@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Handoff now surfaces a best-effort **Recovered rejected approaches and why**
+  section (#299): frozen phrase-scan of persisted user/assistant text, quoted
+  only, newest-first, capped. Not a reconstructed decision tree. Skill summary
+  and `handoff-policy.md` tell destination agents to keep that why instead of
+  inventing branch history.
+
 ## [0.4.4] — 2026-09-09
 
 - Vendor-curated directory submission preparation (OpenAI Plugins Directory,

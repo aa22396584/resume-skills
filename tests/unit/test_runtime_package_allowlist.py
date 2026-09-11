@@ -15,6 +15,7 @@ class RuntimePackageAllowlistTests(unittest.TestCase):
             "build_identity.py",
             "config_layer.py",
             "contracts.py",
+            "decision_rationale.py",
             "diagnostics.py",
             "discover_doctor.py",
             "handoff.py",
