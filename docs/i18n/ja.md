@@ -1,4 +1,4 @@
-<!-- portable-resume-i18n: ja v0.4.5.dev0 -->
+<!-- portable-resume-i18n: ja v0.4.5 -->
 <!-- portable-resume-counts: sources=17 destinations=18 -->
 # Portable Resume — 日本語クイックスタート
 
