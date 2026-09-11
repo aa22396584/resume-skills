@@ -931,6 +931,15 @@ _AUTH_BLOCKED_PATTERNS = (
 )
 
 
+def _auth_blocked_text(*chunks: str) -> bool:
+    """True when stripped diagnostics match a narrowed auth prerequisite."""
+
+    combined = "\n".join(strip_ansi(chunk) for chunk in chunks if chunk).lower()
+    if not combined.strip():
+        return False
+    return any(re.search(pat, combined) for pat in _AUTH_BLOCKED_PATTERNS)
+
+
 def _direct_native_discovery(
     stdout: str,
     stderr: str = "",
@@ -946,11 +955,12 @@ def _direct_native_discovery(
     Fails closed against generic markers (skills, Skills, [ok]), empty outputs,
     negative listings, validation-only outputs, and non-zero exit codes.
     """
-    if returncode != 0:
-        return False, f"Subprocess exited with non-zero code {returncode}"
-
     stdout = strip_ansi(stdout)
     stderr = strip_ansi(stderr)
+    if _auth_blocked_text(stderr, stdout):
+        return False, "Host blocked on authentication/login credentials"
+    if returncode != 0:
+        return False, f"Subprocess exited with non-zero code {returncode}"
 
     if not stdout.strip():
         return False, "Subprocess returned empty output"
@@ -1005,16 +1015,20 @@ def _direct_native_discovery(
             if fence_match:
                 data = json.loads(fence_match.group(1).strip())
             else:
-                for start_char in ("{", "["):
+                decoder = json.JSONDecoder()
+                decoded: list[tuple[int, Any]] = []
+                for start_char in "{[":
                     idx = stdout.find(start_char)
-                    if idx != -1:
-                        try:
-                            obj, _ = json.JSONDecoder().raw_decode(stdout, idx)
-                            if isinstance(obj, (dict, list)):
-                                data = obj
-                                break
-                        except Exception:
-                            pass
+                    if idx == -1:
+                        continue
+                    try:
+                        obj, _ = decoder.raw_decode(stdout, idx)
+                    except Exception:
+                        continue
+                    if isinstance(obj, (dict, list)):
+                        decoded.append((idx, obj))
+                if decoded:
+                    _, data = min(decoded, key=lambda item: item[0])
 
         if data is not None:
             if isinstance(data, list):
@@ -1422,6 +1436,80 @@ def _count_quote_depth(line: str) -> int:
     return d
 
 
+def _stale_metadata_section(block: str) -> str:
+    """Return the structural stale-metadata section, excluding recovered text."""
+
+    lines = block.splitlines()
+    first_non_empty = next((line for line in lines if line.strip()), "")
+    block_depth = _count_quote_depth(first_non_empty)
+    heading_re = re.compile(r"^##\s+stale\s+session\s+metadata\b", re.IGNORECASE)
+    next_h2_re = re.compile(r"^##\s+\S", re.IGNORECASE)
+    start: int | None = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        depth = _count_quote_depth(stripped)
+        if depth != block_depth:
+            continue
+        text = stripped.lstrip("> ").strip()
+        if start is None:
+            if heading_re.match(text):
+                start = idx
+            continue
+        if next_h2_re.match(text):
+            end = idx
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end])
+
+
+def _untrusted_envelope_header(block: str) -> str:
+    """Return Source/Session lines from a legacy untrusted envelope, not recovered turns."""
+
+    lines = block.splitlines()
+    first_non_empty = next((line for line in lines if line.strip()), "")
+    block_depth = _count_quote_depth(first_non_empty)
+    start_re = re.compile(r"^###\s+untrusted(?:\s+recovered\s+context)?\b", re.IGNORECASE)
+    stop_re = re.compile(
+        r"^(?:###\s+(?:latest\s+explicit\s+user\s+request|latest\s+assistant\s+message|"
+        r"latest\s+recorded\s+action|bounded\s+transcript\s+evidence|turn\s+transcript|"
+        r"user|assistant|tool)\b)",
+        re.IGNORECASE,
+    )
+    start: int | None = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        depth = _count_quote_depth(stripped)
+        if depth != block_depth:
+            continue
+        text = stripped.lstrip("> ").strip()
+        if start is None:
+            if start_re.match(text):
+                start = idx
+            continue
+        if stop_re.match(text):
+            end = idx
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end])
+
+
+def _identity_header_text(block: str) -> str:
+    """Session identity comes from envelope metadata, never recovered user text."""
+
+    metadata = _stale_metadata_section(block)
+    if metadata.strip():
+        return metadata
+    return _untrusted_envelope_header(block)
+
+
 def _extract_markdown_recovered_content(block: str) -> str:
     """Extract recovered conversation content from request/action/turn sections.
 
@@ -1557,7 +1645,24 @@ def evaluate_explicit_activation(
     3. runner_execution_observed: runner actually executed (observable trace or authentic format)
     4. fixture_read_verified: exact source, session, and fixture content confirmed read
     """
+    stdout = strip_ansi(stdout)
+    stderr = strip_ansi(stderr)
+    err_lower = stderr.lower()
+
+    # Auth diagnostics on stderr are a prerequisite, including nonzero CLI login failures.
+    # Recovered conversation text in stdout is untrusted and is only inspected later
+    # when runner execution is not observed.
     if returncode != 0:
+        if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS):
+            obs = ExplicitActivationObservation(
+                host_responded=False,
+                skill_selected=False,
+                runner_execution_observed=False,
+                fixture_read_verified=False,
+                details="Host blocked on authentication/login credentials",
+                error="auth_required",
+            )
+            return False, obs
         obs = ExplicitActivationObservation(
             host_responded=False,
             skill_selected=False,
@@ -1568,13 +1673,6 @@ def evaluate_explicit_activation(
         )
         return False, obs
 
-    stdout = strip_ansi(stdout)
-    stderr = strip_ansi(stderr)
-
-    # Restrict early authentication prerequisite check to stderr (#296, Codex comment 3965234372).
-    # Recovered conversation text in stdout is untrusted and may mention auth keywords.
-    # Stdout will only be inspected for auth blockers if runner execution is not observed.
-    err_lower = stderr.lower()
     if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS):
         obs = ExplicitActivationObservation(
             host_responded=False,
@@ -1770,9 +1868,10 @@ def evaluate_explicit_activation(
 
             extracted_source: str | None = None
             extracted_session: str | None = None
+            metadata = _identity_header_text(block)
             src_match = re.search(
                 r"""(?i)(?:>\s*-\s*)?source\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([a-zA-Z0-9_-]+))""",
-                block,
+                metadata,
             )
             if src_match:
                 extracted_source = (
@@ -1780,7 +1879,7 @@ def evaluate_explicit_activation(
                 ).strip()
             sess_match = re.search(
                 r"""(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([^\s\r\n`'"]+))""",
-                block,
+                metadata,
             )
             if sess_match:
                 extracted_session = (
@@ -2072,6 +2171,21 @@ def collect_local_discovery_evidence(
                 reason=sanitize_evidence_text(
                     f"Blocked prerequisite: command not supported by host binary version: {proc.stderr.strip() or proc.stdout.strip()[:100]}"
                 ),
+            )
+
+        if _auth_blocked_text(proc.stderr, proc.stdout):
+            return NativeEvidenceRecord(
+                host=host,
+                scope=SCOPE_LOCAL_DISCOVERY,
+                state=STATE_NOT_RUN,
+                artifact_file=artifact_name,
+                artifact_sha256=artifact_sha,
+                identity_sha256=identity_hash,
+                recorded_at=current_iso_timestamp(),
+                host_version=host_ver,
+                operator=operator,
+                ci_run_url=ci_run_url,
+                reason="Blocked prerequisite: authentication or credentials required for host discovery",
             )
 
         if proc.returncode != 0:
