@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Portable Resume: offline, local-only Agent Skills that carry bounded context from your last coding-agent session into a fresh session. Inert handoff, never live restore.">
+<meta name="theme-color" content="#0ea5e9">
+<meta property="og:title" content="Portable Resume — resume past coding-agent sessions">
+<meta property="og:description" content="Offline, local-only context migration across coding agents. Inert handoff, never live restore.">
+<meta property="og:image" content="https://iml1s.github.io/resume-skills/assets/logo-512.png">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+<title>Portable Resume — resume past coding-agent sessions</title>
+</head>
+<body>
+<header class="wrap site-head">
+  <a class="brand" href="./"><img src="assets/logo.svg" alt=""><span>PR/</span> Portable Resume</a>
+  <nav aria-label="Primary"><a href="#install">Install</a><a href="#use">Use</a><a href="support/">Support</a><a href="https://github.com/ImL1s/resume-skills">GitHub ↗</a></nav>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <img src="assets/logo.svg" alt="Portable Resume logo">
+    <h1>Pick up your <em>last session</em>.<br>Offline. Inert. Local only.</h1>
+    <p class="lead">Portable Resume is a set of Agent Skills for <b>Claude Code</b>, <b>Codex</b>, <b>Grok Build</b>, <b>Cursor</b> and other local coding agents. Each <code>resume-&lt;source&gt;</code> skill reads that agent's own on-disk session store and prints an inert, best-effort-redacted handoff that the fresh session summarizes and continues from. It never restores a live process.</p>
+    <div class="badges">
+      <span class="badge"><b>17</b> session sources</span>
+      <span class="badge"><b>18</b> destination hosts</span>
+      <span class="badge">Python 3.11+ · <b>standard library only</b></span>
+      <span class="badge"><b>No network</b> · no telemetry · no MCP server</span>
+      <span class="badge"><b>Apache-2.0</b> licensed</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn" href="https://github.com/ImL1s/resume-skills">View source</a>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="grid">
+      <div class="card"><h3>Reads, never writes</h3><p>Source session stores are opened read-only with stable, no-follow reads that fail closed on races. The reader never invokes the source agent's CLI and never modifies its files.</p></div>
+      <div class="card"><h3>Local only</h3><p>No network path, no credentials, no MCP server, no scheduler, no background service. The only optional child process is a trusted <code>zstd</code> decoder for compressed Codex rollouts.</p></div>
+      <div class="card"><h3>Inert handoff</h3><p>Recovered text is marked untrusted and stale, and redaction is best-effort rather than complete data-loss prevention. When a host invokes the skill, the host and its model provider receive the handoff output directly; run the reader in a terminal if you want to review it first.</p></div>
+      <div class="card"><h3>Fresh session, not live restore</h3><p>This is context migration. It does not resume a running process, replay tool calls, or restore host state.</p></div>
+    </div>
+
+    <div class="eyebrow">How it works</div>
+    <h2>One reader, one handoff</h2>
+    <div class="flow">start a fresh session in the same repository
+  →  invoke resume-&lt;source&gt; (for example /resume-claude or $resume-codex)
+  →  the bundled reader picks the newest session for the current directory
+     (where the source records one; see the privacy page for unscoped sources)
+  →  it prints an inert markdown handoff to stdout (or to a file you name)
+  →  the host agent reads that output as data and summarizes it for you
+  →  you verify the summary against the repository and continue</div>
+    <p class="note">Running the reader yourself in a terminal (<code>portable-resume &lt;source&gt; show latest</code>) keeps the handoff on your machine until you decide what to paste. Inside a host skill invocation the host, and therefore its model provider, receives the handoff output directly; see <a href="privacy/">Privacy</a>.</p>
+
+    <div class="eyebrow">Sources</div>
+    <h2>Seventeen session stores</h2>
+    <table>
+      <thead><tr><th>Skill</th><th>Reads</th></tr></thead>
+      <tbody>
+        <tr><td><code>resume-claude</code></td><td>Claude Code projects JSONL</td></tr>
+        <tr><td><code>resume-codex</code></td><td>Codex SQLite state and rollout JSONL</td></tr>
+        <tr><td><code>resume-cursor</code></td><td>Cursor CLI chats and Desktop state database</td></tr>
+        <tr><td><code>resume-grok</code></td><td>Grok Build session updates JSONL</td></tr>
+        <tr><td><code>resume-gemini</code>, <code>resume-antigravity</code></td><td>Gemini CLI session JSONL, Antigravity transcript JSONL</td></tr>
+        <tr><td><code>resume-github-copilot</code></td><td>GitHub Copilot CLI session-state events</td></tr>
+        <tr><td><code>resume-opencode</code>, <code>resume-qwen</code>, <code>resume-kimi</code></td><td>OpenCode, Qwen Code and Kimi Code local stores</td></tr>
+        <tr><td><code>resume-pi</code>, <code>resume-openclaw</code>, <code>resume-goose</code>, <code>resume-crush</code>, <code>resume-cline</code>, <code>resume-openhands</code>, <code>resume-hermes</code></td><td>The corresponding agent's local session files or SQLite databases</td></tr>
+      </tbody>
+    </table>
+    <p class="note">The full source and destination registry, with store paths and format identifiers, is in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/source-formats.md">docs/source-formats.md</a>.</p>
+
+    <div class="eyebrow" id="install">Install</div>
+    <h2>Pick your route</h2>
+    <div class="tabs">
+      <div class="card"><h3>Any host (PyPI)</h3>
+<pre>pipx install portable-resume
+install-resume-skills quick-install all</pre>
+<p>Installs every destination profile into its user-global skill root. Use <code>quick-install &lt;host&gt;</code> for one host.</p></div>
+      <div class="card"><h3>Claude Code</h3>
+<pre>claude plugin marketplace add ImL1s/portable-resume-marketplace
+claude plugin install portable-resume@portable-resume --scope user</pre></div>
+      <div class="card"><h3>Codex</h3>
+<pre>codex plugin marketplace add ImL1s/portable-resume-marketplace
+codex plugin add portable-resume@portable-resume</pre></div>
+      <div class="card"><h3>Grok Build</h3>
+<pre>grok plugin marketplace add ImL1s/portable-resume-marketplace
+grok plugin install portable-resume --trust</pre></div>
+      <div class="card"><h3>Antigravity CLI</h3>
+<pre>agy plugin install \
+  https://github.com/ImL1s/portable-resume-marketplace/tree/main/plugins/claude/portable-resume</pre>
+<p>Installs the 17 skills into <code>~/.gemini/config/plugins/portable-resume</code> (verified on agy 1.1.28, 2026-09-09). Only this exact tree URL works; there is no Google-run marketplace, and the release-attached <code>antigravity-plugin.zip</code> remains the offline route.</p></div>
+    </div>
+    <p class="note">Cursor, Qwen Code, Kimi Code CLI and direct archive installs for every other host are documented in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/install-hosts.md">docs/install-hosts.md</a>. Verify release archives against <code>SHA256SUMS</code> before installing a plugin.</p>
+
+    <div class="eyebrow" id="use">Use</div>
+    <h2>In a fresh session</h2>
+<pre>/resume-claude          # Claude Code, Grok Build, Cursor and other slash-command hosts
+$resume-codex           # Codex
+
+# The skill runs only the bundled reader, for example:
+python3 &lt;skill&gt;/scripts/run_reader.py show latest --cwd "$PWD"</pre>
+    <p class="note">The reader selects the newest session recorded for the current working directory where the source records one (a session without a recorded directory may remain eligible, depending on the adapter, and <code>resume-openhands</code> has no directory filter at all), prints an inert handoff, and exits. Structured diagnostics and exit codes are listed in <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/diagnostics.md">docs/diagnostics.md</a>.</p>
+
+    <div class="eyebrow">Honesty</div>
+    <h2>What is verified, what is not</h2>
+    <table>
+      <thead><tr><th>Claim</th><th>Status (0.4.4)</th></tr></thead>
+      <tbody>
+        <tr><td>Packaging and Ubuntu installed-runner matrix (17 × 18 cells)</td><td class="ok">✓ CI hard gate</td></tr>
+        <tr><td>Wheel, sdist and host archive reproducibility from one pinned build identity</td><td class="ok">✓ CI hard gate</td></tr>
+        <tr><td>Exact native plugin installs and headless activation on host CLIs</td><td class="warn">recorded on v0.3.2 assets; fresh re-run on later tags not-run</td></tr>
+        <tr><td>Windows</td><td class="warn">focused product-install smoke, not the full matrix</td></tr>
+        <tr><td>Vendor-curated directory listings</td><td class="warn">submission prepared in 0.4.4; nothing is claimed as listed</td></tr>
+      </tbody>
+    </table>
+    <p class="note">The authoritative done/not-done ledger is <a href="https://github.com/ImL1s/resume-skills/blob/main/docs/STATUS.md">docs/STATUS.md</a>.</p>
+  </section>
+</main>
+
+<footer><div class="wrap footer-grid">
+  <div>Independent community project · Apache-2.0 · not affiliated with any host vendor</div>
+  <div class="footer-links"><a href="privacy/">Privacy</a><a href="terms/">Terms</a><a href="support/">Support</a><a href="https://github.com/ImL1s/resume-skills">GitHub</a></div>
+</div></footer>
+</body>
+</html>

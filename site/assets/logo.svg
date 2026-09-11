@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Portable Resume logo">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#g)"/>
+  <!-- bounded session context -->
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#fff" stroke-width="36"/>
+  <!-- resume -->
+  <polygon points="210,190 210,322 326,256" fill="#fff"/>
+</svg>

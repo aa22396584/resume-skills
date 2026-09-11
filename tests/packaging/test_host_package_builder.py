@@ -4,11 +4,13 @@ import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 
 from portable_resume import __version__
@@ -17,6 +19,8 @@ from portable_resume.install.catalog import HOST_KEYS
 from portable_resume.registry import enabled_package_keys
 
 REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
 
 class HostPackageBuilderTests(unittest.TestCase):
@@ -148,8 +152,9 @@ class HostPackageBuilderTests(unittest.TestCase):
             "antigravity-plugin": "plugin.json",
             "claude-marketplace": ".claude-plugin/marketplace.json",
             "codex-marketplace": ".agents/plugins/marketplace.json",
+            "codex-plugin": ".codex-plugin/plugin.json",
             "cursor-marketplace": ".cursor-plugin/marketplace.json",
-            "grok-plugin": "plugin.json",
+            "grok-plugin": ".grok-plugin/plugin.json",
             "qwen-extension": "qwen-extension.json",
             "kimi-plugin": "kimi.plugin.json",
         }
@@ -200,6 +205,86 @@ class HostPackageBuilderTests(unittest.TestCase):
                 )
                 self.assertEqual(plugin["skills"], "./skills/")
                 self.assertEqual(plugin["version"], __version__)
+                self.assertEqual(plugin["author"]["url"], "https://github.com/ImL1s")
+                self._assert_directory_interface(plugin["interface"])
+                for asset in ("icon.png", "logo.png"):
+                    self._assert_square_png(
+                        zipped.read(f"plugins/portable-resume/assets/{asset}"),
+                        minimum=48 if asset == "icon.png" else 256,
+                    )
+                codex_plugin_subtree = {
+                    name[len("plugins/portable-resume/") :]: zipped.read(name)
+                    for name in zipped.namelist()
+                    if name.startswith("plugins/portable-resume/")
+                }
+
+            # OpenAI plugin-root bundle: the codex marketplace plugin subtree
+            # lifted to the archive top level plus the repository documents.
+            codex_plugin = output / artifacts["codex-plugin"]["file"]
+            with zipfile.ZipFile(codex_plugin) as zipped:
+                names = set(zipped.namelist())
+                for document in ("LICENSE", "NOTICE", "README.md"):
+                    self.assertEqual(
+                        zipped.read(document),
+                        (REPO / document).read_bytes(),
+                    )
+                self.assertFalse(any(name.startswith("plugins/") for name in names))
+                self.assertFalse(any("marketplace.json" in name for name in names))
+                bundled = {
+                    name: zipped.read(name)
+                    for name in names
+                    if name not in {"LICENSE", "NOTICE", "README.md"}
+                }
+                self.assertEqual(bundled, codex_plugin_subtree)
+                manifest = json.loads(
+                    zipped.read(".codex-plugin/plugin.json").decode("utf-8")
+                )
+                self.assertEqual(manifest["interface"]["composerIcon"], "./assets/icon.png")
+                self.assertEqual(manifest["interface"]["logo"], "./assets/logo.png")
+                self.assertIn("assets/icon.png", names)
+                self.assertIn("assets/logo.png", names)
+
+            claude = output / artifacts["claude-marketplace"]["file"]
+            with zipfile.ZipFile(claude) as zipped:
+                marketplace = json.loads(
+                    zipped.read(".claude-plugin/marketplace.json").decode("utf-8")
+                )
+                self.assertEqual(
+                    marketplace["$schema"],
+                    "https://code.claude.com/schemas/marketplace.json",
+                )
+                self.assertEqual(marketplace["owner"]["url"], "https://github.com/ImL1s")
+                entry = marketplace["plugins"][0]
+                self.assertEqual(entry["source"], "./plugins/portable-resume")
+                self.assertEqual(entry["displayName"], "Portable Resume")
+                self.assertEqual(entry["license"], "Apache-2.0")
+                self.assertEqual(
+                    entry["repository"], "https://github.com/ImL1s/resume-skills"
+                )
+                self.assertEqual(entry["version"], __version__)
+
+            grok = output / artifacts["grok-plugin"]["file"]
+            with zipfile.ZipFile(grok) as zipped:
+                names = set(zipped.namelist())
+                self.assertNotIn("plugin.json", names)
+                manifest = json.loads(
+                    zipped.read(".grok-plugin/plugin.json").decode("utf-8")
+                )
+                self.assertEqual(manifest["skills"], "./skills/")
+                self.assertEqual(manifest["version"], __version__)
+                self.assertEqual(manifest["license"], "Apache-2.0")
+                self.assertEqual(
+                    manifest["repository"], "https://github.com/ImL1s/resume-skills"
+                )
+                self.assertEqual(manifest["author"]["url"], "https://github.com/ImL1s")
+                self.assertIn("assets/icon.png", names)
+                self.assertIn("assets/logo.png", names)
+                self.assertTrue(
+                    any(
+                        name.startswith("skills/") and name.endswith("/SKILL.md")
+                        for name in names
+                    )
+                )
 
             cursor = output / artifacts["cursor-marketplace"]["file"]
             with zipfile.ZipFile(cursor) as zipped:
@@ -265,6 +350,201 @@ class HostPackageBuilderTests(unittest.TestCase):
                         for name in zipped.namelist()
                     )
                 )
+
+    def _assert_square_png(self, data: bytes, *, minimum: int) -> None:
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(data[12:16], b"IHDR")
+        width, height = struct.unpack(">II", data[16:24])
+        self.assertEqual(width, height)
+        self.assertGreaterEqual(width, minimum)
+
+    def _assert_directory_interface(self, interface: dict) -> None:
+        """OpenAI plugin directory ``interface`` block requirements."""
+
+        self.assertEqual(interface["displayName"], "Portable Resume")
+        self.assertLessEqual(len(interface["shortDescription"]), 30)
+        self.assertEqual(interface["developerName"], "ImL1s")
+        self.assertEqual(interface["category"], "Developer Tools")
+        self.assertEqual(interface["capabilities"], ["Interactive", "Read"])
+        site = "https://iml1s.github.io/resume-skills/"
+        self.assertEqual(interface["websiteURL"], site)
+        self.assertEqual(interface["supportURL"], f"{site}support/")
+        self.assertEqual(interface["privacyPolicyURL"], f"{site}privacy/")
+        self.assertEqual(interface["termsOfServiceURL"], f"{site}terms/")
+        prompts = interface["defaultPrompt"]
+        self.assertEqual(len(prompts), 3)
+        self.assertNotIn("$", prompts[0])
+        self.assertTrue(all(isinstance(p, str) and p.strip() for p in prompts))
+        self.assertRegex(interface["brandColor"], r"^#[0-9A-Fa-f]{6}$")
+        long_description = interface["longDescription"]
+        self.assertIn(f"{len(SOURCE_KEYS)} sources", long_description)
+        for phrase in ("never contacts the network", "never modifies the source store",
+                       "no MCP server", "best-effort", "not live session restore"):
+            self.assertIn(phrase, long_description)
+        self.assertEqual(interface["composerIcon"], "./assets/icon.png")
+        self.assertEqual(interface["logo"], "./assets/logo.png")
+
+    def test_committed_brand_assets_meet_directory_size_floors(self) -> None:
+        self._assert_square_png((REPO / "assets" / "logo.png").read_bytes(), minimum=256)
+        self._assert_square_png((REPO / "assets" / "icon.png").read_bytes(), minimum=48)
+
+    def test_png_validation_rejects_truncated_or_corrupt_assets(self) -> None:
+        from scripts.build_host_packages import _png_dimensions
+
+        logo = (REPO / "assets" / "logo.png").read_bytes()
+        self.assertEqual(_png_dimensions(logo), (512, 512))
+        iend_at = logo.rfind(b"IEND")
+        idat_at = logo.find(b"IDAT")
+        corrupt_idat = bytearray(logo)
+        corrupt_idat[idat_at + 40] ^= 0xFF
+        bad_crc = bytearray(logo)
+        bad_crc[-1] ^= 0x01  # last byte is part of the IEND CRC
+        cases = {
+            "signature": b"\x89PNX" + logo[4:],
+            "truncated before IEND": logo[: iend_at - 4],
+            "truncated mid-IDAT": logo[: idat_at + 100],
+            "corrupt IDAT byte (CRC mismatch)": bytes(corrupt_idat),
+            "bad IEND CRC": bytes(bad_crc),
+            "trailing bytes": logo + b"\x00",
+            "header only": logo[:33],
+        }
+        for label, data in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    _png_dimensions(data)
+
+    @staticmethod
+    def _png_chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
+    def _png_from_chunks(self, *chunks: tuple[bytes, bytes]) -> bytes:
+        """Assemble a PNG with valid CRCs from explicit (type, body) chunks."""
+
+        return b"\x89PNG\r\n\x1a\n" + b"".join(
+            self._png_chunk(kind, body) for kind, body in chunks
+        )
+
+    def test_png_validation_rejects_structurally_invalid_but_crc_valid_files(self) -> None:
+        """Every case below carries correct CRCs, so only structural checks can reject it."""
+
+        from scripts.build_host_packages import _png_dimensions
+
+        size = 4
+        stride = 1 + size * 4
+        raw = b"".join(b"\x00" + bytes(range(size * 4)) for _ in range(size))
+        idat = zlib.compress(raw, 9)
+
+        def ihdr(depth=8, color=6, compression=0, filt=0, interlace=0, width=size, height=size):
+            return struct.pack(">IIBBBBB", width, height, depth, color, compression, filt, interlace)
+
+        good = self._png_from_chunks((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""))
+        self.assertEqual(_png_dimensions(good), (size, size))
+        # Ancillary chunks and split IDAT are legal; make sure the checks are
+        # structural rather than "anything unusual".
+        split = self._png_from_chunks(
+            (b"IHDR", ihdr()),
+            (b"tEXt", b"Comment\x00synthetic"),
+            (b"IDAT", idat[:10]),
+            (b"IDAT", idat[10:]),
+            (b"IEND", b""),
+        )
+        self.assertEqual(_png_dimensions(split), (size, size))
+
+        bad_filter_row = bytearray(raw)
+        bad_filter_row[stride] = 5  # second scanline uses an undefined filter type
+        cases = {
+            "IHDR compression method 1": ((b"IHDR", ihdr(compression=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR filter method 1": ((b"IHDR", ihdr(filt=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR interlace 2": ((b"IHDR", ihdr(interlace=2)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR Adam7 interlace (unsupported shape)": ((b"IHDR", ihdr(interlace=1)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR bit depth 3": ((b"IHDR", ihdr(depth=3)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR colour type 5": ((b"IHDR", ihdr(color=5)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR RGBA with bit depth 4": ((b"IHDR", ihdr(depth=4)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR zero width": ((b"IHDR", ihdr(width=0)), (b"IDAT", idat), (b"IEND", b"")),
+            "IHDR wrong length": ((b"IHDR", ihdr() + b"\x00"), (b"IDAT", idat), (b"IEND", b"")),
+            "duplicate IHDR": ((b"IHDR", ihdr()), (b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b"")),
+            "IDAT before IHDR": ((b"IDAT", idat), (b"IHDR", ihdr()), (b"IEND", b"")),
+            "no IDAT": ((b"IHDR", ihdr()), (b"IEND", b"")),
+            "non-contiguous IDAT": ((b"IHDR", ihdr()), (b"IDAT", idat[:10]), (b"tEXt", b"k\x00v"), (b"IDAT", idat[10:]), (b"IEND", b"")),
+            "non-empty IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b"\x00")),
+            "duplicate IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""), (b"IEND", b"")),
+            "chunk after IEND": ((b"IHDR", ihdr()), (b"IDAT", idat), (b"IEND", b""), (b"tEXt", b"k\x00v")),
+            "IEND not last": ((b"IHDR", ihdr()), (b"IEND", b""), (b"IDAT", idat)),
+            "scanline filter type 5": ((b"IHDR", ihdr()), (b"IDAT", zlib.compress(bytes(bad_filter_row), 9)), (b"IEND", b"")),
+            "inflated size mismatch": ((b"IHDR", ihdr(height=size + 1)), (b"IDAT", idat), (b"IEND", b"")),
+        }
+        for label, chunks in cases.items():
+            with self.subTest(case=label):
+                data = self._png_from_chunks(*chunks)
+                with self.assertRaises(ValueError):
+                    _png_dimensions(data)
+
+    def test_render_brand_assets_reproduces_committed_pixels(self) -> None:
+        """The committed PNGs decode to exactly what scripts/render_brand_assets.py renders.
+
+        Pixel data is compared rather than compressed bytes because deflate
+        output may differ between zlib implementations across CI platforms.
+        """
+
+        from scripts import render_brand_assets
+
+        self.assertEqual(render_brand_assets.check(), [])
+        width, height, raw = render_brand_assets.decode_png(
+            (REPO / "assets" / "icon.png").read_bytes()
+        )
+        self.assertEqual((width, height), (256, 256))
+        self.assertEqual(raw, render_brand_assets.render_raw(256))
+        # The website copy must show the same image as the package logo;
+        # compare decoded pixels, not deflate bytes (encoders may differ).
+        self.assertIn("site/assets/logo-512.png", render_brand_assets.ASSETS)
+        self.assertEqual(
+            render_brand_assets.decode_png(
+                (REPO / "site" / "assets" / "logo-512.png").read_bytes()
+            ),
+            render_brand_assets.decode_png((REPO / "assets" / "logo.png").read_bytes()),
+        )
+
+    def test_render_brand_assets_check_rejects_structurally_damaged_copies(self) -> None:
+        """A website copy missing its IEND, or padded after it, must fail --check and decode_png.
+
+        The pixel comparison only runs after the builder's strict validator
+        accepts the file, so truncation cannot slip through as "same pixels".
+        """
+
+        from unittest import mock
+
+        from scripts import render_brand_assets
+
+        relative = "site/assets/logo-512.png"
+        intact = (REPO / relative).read_bytes()
+        self.assertEqual(intact[-12:-4], b"\x00\x00\x00\x00IEND")
+        damaged = {
+            "IEND chunk removed": intact[:-12],
+            "trailing bytes after IEND": intact + b"\x00\x00\x00\x00",
+            "IEND replaced by trailing junk": intact[:-12] + b"junkjunkjunk",
+        }
+        for label, data in damaged.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    render_brand_assets.decode_png(data)
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    target = root / relative
+                    target.parent.mkdir(parents=True)
+                    target.write_bytes(data)
+                    with (
+                        mock.patch.object(render_brand_assets, "REPO", root),
+                        mock.patch.object(render_brand_assets, "ASSETS", {relative: 512}),
+                    ):
+                        problems = render_brand_assets.check()
+                    self.assertEqual(len(problems), 1, problems)
+                    self.assertIn(relative, problems[0])
+                    self.assertIn("undecodable", problems[0])
 
     def test_offline_contract_rejects_archive_missing_manifest(self) -> None:
         from portable_resume.install.package_contracts import validate_archive_bytes

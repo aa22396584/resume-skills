@@ -30,6 +30,10 @@ from ..snapshot import stable_read_bytes
 
 # Schema of this contracts module itself (bumped when contract fields change).
 PACKAGE_CONTRACTS_SCHEMA = "portable-resume/package-contracts-v1"
+# Contract ids (``<surface>-v1``) are per-bundle, not cross-version handles:
+# ``_common_required_manifest_values`` pins ``version`` to this bundle, so an
+# archive from another release fails its contract on the version pin alone.
+# Layout changes therefore refresh ``docs_checked_date`` rather than bump the id.
 RUNTIME_IDENTITY_RELATIVE = (
     ".portable-resume/runtime/portable_resume/resources/build-identity.json"
 )
@@ -271,6 +275,7 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "claude plugin marketplace add <extracted-dir>; "
             "claude plugin install portable-resume@portable-resume"
         ),
+        docs_checked_date="2026-09-09",
     ),
     "codex-marketplace": PackageContract(
         contract_id="codex-marketplace-v1",
@@ -279,6 +284,8 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
         required_members=(
             ".agents/plugins/marketplace.json",
             "plugins/portable-resume/.codex-plugin/plugin.json",
+            "plugins/portable-resume/assets/icon.png",
+            "plugins/portable-resume/assets/logo.png",
         ),
         primary_manifest="plugins/portable-resume/.codex-plugin/plugin.json",
         required_manifest_keys=frozenset(
@@ -291,6 +298,7 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
                 "homepage",
                 "repository",
                 "skills",
+                "interface",
             }
         ),
         required_manifest_values={
@@ -304,6 +312,50 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "codex plugin marketplace add <extracted-dir>; "
             "codex plugin add portable-resume@portable-resume"
         ),
+        docs_checked_date="2026-09-09",
+    ),
+    # Plugin root at the archive top level: the skills-only bundle shape that the
+    # OpenAI plugin directory accepts as an upload (no marketplace catalog).
+    "codex-plugin": PackageContract(
+        contract_id="codex-plugin-v1",
+        package_type="codex-plugin",
+        destination="codex",
+        required_members=(
+            ".codex-plugin/plugin.json",
+            "LICENSE",
+            "NOTICE",
+            "README.md",
+            "assets/icon.png",
+            "assets/logo.png",
+        ),
+        primary_manifest=".codex-plugin/plugin.json",
+        required_manifest_keys=frozenset(
+            {
+                "name",
+                "version",
+                "description",
+                "author",
+                "license",
+                "homepage",
+                "repository",
+                "skills",
+                "interface",
+            }
+        ),
+        required_manifest_values={
+            **_common_required_manifest_values(),
+            "skills": "./skills/",
+        },
+        skills_prefix="skills/",
+        plugin_root=None,
+        version_source="plugin.json version",
+        install_hint=(
+            "upload the archive as the skills-only plugin bundle in the OpenAI "
+            "plugin submission flow; locally: codex plugin add <extracted-dir>"
+        ),
+        native_evidence_status="not-run",
+        last_native_evidence_ref=None,
+        docs_checked_date="2026-09-09",
     ),
     "cursor-marketplace": PackageContract(
         contract_id="cursor-marketplace-v1",
@@ -355,16 +407,34 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "agy plugin validate <extracted-dir>; agy plugin install <extracted-dir>"
         ),
     ),
+    # Manifest lives at .grok-plugin/plugin.json (Grok Build plugin layout);
+    # the root plugin.json spelling used through 0.4.3 is no longer emitted.
     "grok-plugin": PackageContract(
         contract_id="grok-plugin-v1",
         package_type="grok-plugin",
         destination="grok",
-        required_members=("plugin.json",),
-        primary_manifest="plugin.json",
-        required_manifest_keys=frozenset(
-            {"name", "version", "description", "author", "license", "homepage", "repository"}
+        required_members=(
+            ".grok-plugin/plugin.json",
+            "assets/icon.png",
+            "assets/logo.png",
         ),
-        required_manifest_values=_common_required_manifest_values(),
+        primary_manifest=".grok-plugin/plugin.json",
+        required_manifest_keys=frozenset(
+            {
+                "name",
+                "version",
+                "description",
+                "author",
+                "license",
+                "homepage",
+                "repository",
+                "skills",
+            }
+        ),
+        required_manifest_values={
+            **_common_required_manifest_values(),
+            "skills": "./skills/",
+        },
         skills_prefix="skills/",
         plugin_root=None,
         version_source="plugin.json version",
@@ -372,6 +442,11 @@ PACKAGE_CONTRACTS: dict[str, PackageContract] = {
             "grok plugin validate <extracted-dir>; "
             "grok plugin install <extracted-dir> --trust"
         ),
+        # v0.3.2 native evidence covered the root plugin.json layout that this
+        # contract no longer accepts, so no historical reference applies.
+        native_evidence_status="not-run",
+        last_native_evidence_ref=None,
+        docs_checked_date="2026-09-09",
     ),
     "qwen-extension": PackageContract(
         contract_id="qwen-extension-v1",

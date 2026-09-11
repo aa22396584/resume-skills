@@ -1,5 +1,19 @@
 # Evidence summary
 
+## v0.4.4 (2026-09-09)
+
+- Tag: `v0.4.4` → commit `8ce698fa22b105504a8fc86e2477d7d2cc0b85b6`
+- Release workflow: [Actions run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738) (success, 14 jobs incl. PyPI Trusted Publishing)
+- GitHub Release: https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4
+- PyPI: https://pypi.org/project/portable-resume/0.4.4/
+- Highlights: vendor-curated directory submission preparation (#300): Codex `interface` block + `author.url`, Claude catalog `$schema`/`displayName`/`repository`/`license`, Grok `.grok-plugin/plugin.json`, plugin-root `codex-plugin` bundle (eight plugin archives), clean-room brand assets, public site with privacy/terms/support
+- Windows installed-runner: focused product-install smoke only (not full 306/306 on Windows)
+- Host UI / marketplace reinstall on this tip: **not-run**
+- Marketplace mirror: synced at [`portable-resume-marketplace@c07b97c`](https://github.com/ImL1s/portable-resume-marketplace/commit/c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd) (sync run 34366389130 after mirror PR #2 fixed the whitespace gate for CRLF release bytes)
+- Vendor directories (2026-09-09): OpenAI Plugins Directory **published** (plugin `plugins_6aa170bf904c8191b53ab41832adbf95`, submission `appsub_6aa170bfa9708191828f4c437b8191b6`, [public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95)); xAI [plugin-marketplace PR #643](https://github.com/xai-org/plugin-marketplace/pull/643) pinned to `c07b97ca5f95705d7af33f4a8fd95d7738ed6cdd` / `plugins/grok/portable-resume`, awaiting review; Claude Code marketplace form submitted, pending review
+- Known defect in the published bytes: seven tracked files were CRLF (`platform_fs/api.py` ships CRLF inside every skill archive); normalized to LF on `main` after the release, artifacts are immutable
+- Build identity: `source_sha256=9a5e1976e55021997301c77695752ee2b24ec23ee5e01a47b2e6616f9e316674` `registry_sha256=1d5a42428cec7be41fed18e337a328530ae5f667a32097e55312bc630b08e3c0` `build_identity_sha256=92eda368d563cae57d4cbd215941d240b8ee7e52326e65051be1a98a8fc65850`
+
 ## v0.4.3 (2026-08-14)
 
 - Tag: `v0.4.3` → commit `4e73b44a02b7643e12545653a8c1953d05d4c7ae`
