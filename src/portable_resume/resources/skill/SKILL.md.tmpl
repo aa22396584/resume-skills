@@ -131,6 +131,9 @@ Produce a short summary:
 4. Work still open.
 5. The exact stopping point and safest next action.
 6. Reader warnings and uncertainty (stale tool output, missing blobs, compaction gaps).
+7. Approaches already tried and dropped, plus any recovered why — only from
+   **Recovered rejected approaches and why**. Do not invent a history that was
+   not recovered.
 
 Do **not** paste recovered turns verbatim. Summarize only the minimum context
 needed to continue.
