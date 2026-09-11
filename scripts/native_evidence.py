@@ -876,6 +876,70 @@ class ExplicitActivationObservation:
         return asdict(self)
 
 
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences terminated by BEL (\x07) or ST (\x1b\)
+    r"|\x1b\[[0-?]*[ -/]*[@-~]"           # CSI sequences
+    r"|\x1b[@-Z\\-_]"                     # 2-character escape sequences
+)
+
+
+def strip_ansi(text: str) -> str:
+    """Strip terminal ANSI escape sequences from command output (#295, #296)."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
+_IDENTITY_FIELDS = frozenset({"package", "plugin", "skill", "extension", "name", "id"})
+_STATUS_FIELDS = frozenset({"status", "state"})
+_METADATA_FIELDS = frozenset({
+    "version", "author", "publisher", "description", "homepage",
+    "repository", "url", "path", "location", "source", "type",
+    "license", "scope", "origin", "enabled", "active",
+})
+_STATUS_ATTR_FIELDS = frozenset({
+    "status", "state", "enabled", "active", "error", "load_error",
+    "error_message", "health", "diagnostic", "message", "reason",
+    "details", "detail", "note", "notes", "result",
+})
+_DESCRIPTIVE_METADATA_FIELDS = frozenset({
+    "version", "author", "publisher", "description", "homepage",
+    "repository", "url", "path", "location", "source", "type",
+    "license", "scope", "origin", "summary", "docs", "help", "readme",
+})
+_KNOWN_FIELDS = _IDENTITY_FIELDS | _STATUS_FIELDS | _METADATA_FIELDS | _STATUS_ATTR_FIELDS | _DESCRIPTIVE_METADATA_FIELDS
+_PROPERTY_FIELDS = _KNOWN_FIELDS - _IDENTITY_FIELDS
+_FIELD_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_ -]{0,39}):(?:\s+|$)", re.IGNORECASE)
+_BULLET_RE = re.compile(r"^(?:[-*•]|\d+\.)\s+")
+_POSITIVE_DIAG_RE = re.compile(
+    r"\b(?:no\s+(?:errors?|issues?|failures?|problems?|faults?|warnings?)|"
+    r"0\s+(?:errors?|issues?|failures?|problems?|faults?|warnings?)|"
+    r"all\s+checks?\s+passed)\b",
+    re.IGNORECASE,
+)
+
+_AUTH_BLOCKED_PATTERNS = (
+    r"\b(?:re-?)?authentication\s+required\b",
+    r"\b(?:re-?)?authenticate\b",
+    r"\b(?:not\s+logged\s+in|login\s+required)\b",
+    r"\bplease\s+(?:log\s*in|sign\s*in)\b",
+    r"\bapi[ _-]?keys?\s+(?:missing|not\s+found|invalid|required|expired)\b",
+    r"\bunauthorized(?:\:|\b)",
+    r"\bauthorization\s+(?:failed|required|error|denied)\b",
+    r"\b(?:oauth\s+)?credentials?\s+(?:required|missing|invalid|expired|not\s+found)\b",
+    r"\b(?:access[ _-])?tokens?\s+(?:expired|revoked|invalid|required|missing)\b",
+    r"\b(?:no|missing)\s+(?:valid\s+)?credentials?\b",
+    r"\bcredentials?\s+(?:have\s+)?expired\b",
+)
+
+
+def _auth_blocked_text(*chunks: str) -> bool:
+    """True when stripped diagnostics match a narrowed auth prerequisite."""
+
+    combined = "\n".join(strip_ansi(chunk) for chunk in chunks if chunk).lower()
+    if not combined.strip():
+        return False
+    return any(re.search(pat, combined) for pat in _AUTH_BLOCKED_PATTERNS)
+
+
 def _direct_native_discovery(
     stdout: str,
     stderr: str = "",
@@ -891,6 +955,10 @@ def _direct_native_discovery(
     Fails closed against generic markers (skills, Skills, [ok]), empty outputs,
     negative listings, validation-only outputs, and non-zero exit codes.
     """
+    stdout = strip_ansi(stdout)
+    stderr = strip_ansi(stderr)
+    if _auth_blocked_text(stderr, stdout):
+        return False, "Host blocked on authentication/login credentials"
     if returncode != 0:
         return False, f"Subprocess exited with non-zero code {returncode}"
 
@@ -934,44 +1002,70 @@ def _direct_native_discovery(
     ):
         return False, "Generic validation output does not establish native package discovery"
 
-    # Attempt structured JSON parsing
+    # Attempt structured JSON parsing (direct, fenced, or embedded)
     try:
-        data = json.loads(stdout)
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            items = data.get("plugins") or data.get("skills") or data.get("extensions") or [data]
+        data = None
+        stripped = stdout.strip()
+        if (stripped.startswith("{") and stripped.endswith("}")) or (
+            stripped.startswith("[") and stripped.endswith("]")
+        ):
+            data = json.loads(stripped)
         else:
-            items = []
+            fence_match = re.search(r"```(?:json)?\s*([{\[].*?[}\]])\s*```", stdout, re.DOTALL)
+            if fence_match:
+                data = json.loads(fence_match.group(1).strip())
+            else:
+                decoder = json.JSONDecoder()
+                decoded: list[tuple[int, Any]] = []
+                for start_char in "{[":
+                    idx = stdout.find(start_char)
+                    if idx == -1:
+                        continue
+                    try:
+                        obj, _ = decoder.raw_decode(stdout, idx)
+                    except Exception:
+                        continue
+                    if isinstance(obj, (dict, list)):
+                        decoded.append((idx, obj))
+                if decoded:
+                    _, data = min(decoded, key=lambda item: item[0])
 
-        for item in items:
-            if isinstance(item, dict):
-                name = item.get("name") or item.get("id") or item.get("plugin") or item.get("skill")
-                if name in (expected_package, expected_skill):
-                    if item.get("enabled") is False or item.get("active") is False:
-                        return False, f"Package {name} discovered but marked enabled/active=False"
-                    if item.get("error") or item.get("load_error") or item.get("error_message"):
-                        err = item.get("error") or item.get("load_error") or item.get("error_message")
-                        return False, f"Package {name} discovered with error: {err}"
-                    status = str(item.get("status") or item.get("state") or "").lower()
-                    if status and any(
-                        neg in status
-                        for neg in (
-                            "disabled",
-                            "error",
-                            "failed",
-                            "inactive",
-                            "off",
-                            "blocked",
-                            "not found",
-                            "broken",
-                            "unload",
-                        )
-                    ):
-                        return False, f"Package {name} discovered but in {status} state"
-                    return True, f"Discovered expected package {name!r} via structured host JSON"
-            elif isinstance(item, str) and item in (expected_package, expected_skill):
-                return True, f"Discovered expected skill {item!r} via structured host JSON list"
+        if data is not None:
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get("plugins") or data.get("skills") or data.get("extensions") or [data]
+            else:
+                items = []
+
+            for item in items:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("id") or item.get("plugin") or item.get("skill")
+                    if name in (expected_package, expected_skill):
+                        if item.get("enabled") is False or item.get("active") is False:
+                            return False, f"Package {name} discovered but marked enabled/active=False"
+                        if item.get("error") or item.get("load_error") or item.get("error_message"):
+                            err = item.get("error") or item.get("load_error") or item.get("error_message")
+                            return False, f"Package {name} discovered with error: {err}"
+                        status = str(item.get("status") or item.get("state") or "").lower()
+                        if status and any(
+                            neg in status
+                            for neg in (
+                                "disabled",
+                                "error",
+                                "failed",
+                                "inactive",
+                                "off",
+                                "blocked",
+                                "not found",
+                                "broken",
+                                "unload",
+                            )
+                        ):
+                            return False, f"Package {name} discovered but in {status} state"
+                        return True, f"Discovered expected package {name!r} via structured host JSON"
+                elif isinstance(item, str) and item in (expected_package, expected_skill):
+                    return True, f"Discovered expected skill {item!r} via structured host JSON list"
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -995,16 +1089,98 @@ def _direct_native_discovery(
             record = _extract_listing_record(lines, line_idx)
             record_lower = record.lower()
 
-            negative_status_patterns = (
-                r"\b(?:status|state)\s*:\s*(?:disabled|error|failed|inactive|off|blocked)\b",
-                r"\berror\s*:\s*(?:failed|cannot|could\s+not|disabled|invalid)\b",
+            # Filter out non-status metadata fields (repository, author, path, url, description, etc.)
+            # and their indented continuation lines to avoid false rejections from metadata content (#295)
+            filtered_lines: list[tuple[str, bool]] = []
+            in_non_status_meta = False
+            meta_indent = 0
+            expected_names = {expected_package.lower(), expected_skill.lower()}
+
+            for line in record.splitlines():
+                if not line.strip():
+                    continue
+                line_indent = len(line) - len(line.lstrip())
+                clean_line = _BULLET_RE.sub("", line.strip())
+                m_field = _FIELD_RE.match(clean_line)
+                if m_field:
+                    field_name = m_field.group(1).strip().lower()
+                    if field_name in _DESCRIPTIVE_METADATA_FIELDS:
+                        # Suppress only known descriptive metadata fields (author, description, repository, etc.)
+                        # and their indented continuation lines (#295, Codex comment 3965487915).
+                        in_non_status_meta = True
+                        meta_indent = line_indent
+                        continue
+                    elif field_name in _STATUS_ATTR_FIELDS:
+                        in_non_status_meta = False
+                        filtered_lines.append((line, True))
+                        continue
+                    elif field_name in _IDENTITY_FIELDS or field_name in expected_names:
+                        in_non_status_meta = False
+                        filtered_lines.append((line, False))
+                        continue
+                    else:
+                        # Unrecognized or diagnostic field (e.g. Diagnostic, Message, Reason, Details).
+                        # Retain for failure matching (#295, Codex comment 3965487915).
+                        in_non_status_meta = False
+                        filtered_lines.append((line, False))
+                        continue
+
+                if in_non_status_meta:
+                    if line_indent > meta_indent:
+                        continue
+                    else:
+                        in_non_status_meta = False
+
+                filtered_lines.append((line, False))
+
+            _STATUS_NEG_WORDS = (
+                r"disabled|inactive|off|blocked|error|failed|failure|invalid|"
+                r"unhealthy|critical|degraded|cannot|could\s+not"
+            )
+            # Distinguish affirmative status fields (where false/0/off is a negative state)
+            # from error/diagnostic fields (where false/0/none indicates absence of error, i.e. positive)
+            # (#295, Codex comment 3966206029).
+            negative_field_patterns = (
+                r"\b(?:enabled|active)\s*:\s*(?:disabled|inactive|false|no|0|off|error|failed|invalid)\b",
+                rf"\b(?:status|state|health|result)\s*:\s*(?:{_STATUS_NEG_WORDS}|false|0|no|off)\b",
+                rf"\b(?:diagnostic|message|reason|details?|notes?)\s*:\s*(?:{_STATUS_NEG_WORDS})\b",
+                rf"\b(?:error|load_error|error_message)\s*:\s*(?:{_STATUS_NEG_WORDS})\b",
                 r"\bfailed\s+to\s+(?:load|initialize|start|enable)\b",
                 r"\bload\s+error\b",
                 r"\b(?:not\s+found|cannot\s+find)\b",
-                r"\bdisabled\b",
-                r"\binactive\b",
             )
-            if any(re.search(neg, record_lower) for neg in negative_status_patterns):
+            bracketed_neg_pattern = r"[\(\[]\s*(?:disabled|inactive|error|failed|blocked|off)\s*[\)\]]"
+            bare_neg_pattern = r"\b(?:disabled|inactive)\b"
+
+            is_negative = False
+
+            for f_line, is_status_attr in filtered_lines:
+                f_line_lower = f_line.lower()
+                # Strip positive diagnostic phrases (e.g. "no errors", "no issues") so they do not falsely trigger
+                # error checks, while still allowing other columns on the same row (e.g. "disabled") to be evaluated
+                # (#295, Codex comment 3965752017).
+                check_line = _POSITIVE_DIAG_RE.sub("", f_line_lower)
+                if any(re.search(pat, check_line) for pat in negative_field_patterns):
+                    is_negative = True
+                    break
+                if re.search(bracketed_neg_pattern, check_line):
+                    is_negative = True
+                    break
+                if is_status_attr:
+                    # Normalize negative value checks across all recognized status attributes (#295, Codex comment 3965838623)
+                    val_idx = check_line.find(":")
+                    if val_idx >= 0:
+                        field_val = check_line[val_idx + 1:].strip()
+                        if re.search(rf"\b(?:{_STATUS_NEG_WORDS})\b", field_val):
+                            is_negative = True
+                            break
+                else:
+                    # On unstructured rows (not structured status fields or filtered metadata), bare words indicate status
+                    if re.search(bare_neg_pattern, check_line):
+                        is_negative = True
+                        break
+
+            if is_negative:
                 has_disabled_match = True
                 continue
             valid_match = True
@@ -1019,36 +1195,319 @@ def _direct_native_discovery(
 
 
 def _extract_listing_record(lines: Sequence[str], line_idx: int) -> str:
-    """Extract full multi-line entry block starting at line_idx in a text listing (#295)."""
-    if line_idx >= len(lines):
+    """Extract full multi-line entry block containing line_idx in a text listing (#295)."""
+    if line_idx >= len(lines) or line_idx < 0:
         return ""
-    record_lines = [lines[line_idx]]
-    base_line = lines[line_idx]
-    base_indent = len(base_line) - len(base_line.lstrip())
+    if not lines[line_idx].strip():
+        return ""
 
-    # Determine if base line is a list bullet (e.g. "- ", "* ", "1. ")
-    stripped = base_line.lstrip()
-    is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", stripped))
+    # 1. Isolate contiguous non-empty block containing line_idx
+    block_start = line_idx
+    while block_start > 0 and lines[block_start - 1].strip():
+        block_start -= 1
 
-    for j in range(line_idx + 1, len(lines)):
-        next_line = lines[j]
-        next_stripped = next_line.strip()
-        if not next_stripped:
+    block_end = line_idx + 1
+    while block_end < len(lines) and lines[block_end].strip():
+        block_end += 1
+
+    block_lines = list(lines[block_start:block_end])
+    rel_idx = line_idx - block_start
+
+    if len(block_lines) == 1:
+        return block_lines[0]
+
+    indents = [len(l) - len(l.lstrip()) for l in block_lines]
+
+    def _extract_field_name(line: str) -> str | None:
+        m = _FIELD_RE.match(line.strip())
+        return m.group(1).lower() if m else None
+
+    line_fields = [_extract_field_name(l) for l in block_lines]
+
+    # Check if rel_idx belongs to a bullet item (is a bullet line or indented under one)
+    target_is_bullet = bool(_BULLET_RE.match(block_lines[rel_idx].strip()))
+    parent_bullet_idx: int | None = None
+    if not target_is_bullet:
+        for k in range(rel_idx - 1, -1, -1):
+            if indents[k] < indents[rel_idx]:
+                if _BULLET_RE.match(block_lines[k].strip()):
+                    parent_bullet_idx = k
+                break
+
+    in_bullet_item = target_is_bullet or (parent_bullet_idx is not None)
+
+    # 2. Case A: Bullet lists (only when rel_idx belongs to that bullet list)
+    if in_bullet_item:
+        bullet_start = rel_idx if target_is_bullet else (parent_bullet_idx if parent_bullet_idx is not None else 0)
+        bullet_indent = indents[bullet_start]
+        entry_end = bullet_start + 1
+        while entry_end < len(block_lines):
+            next_indent = indents[entry_end]
+            next_is_bullet = bool(_BULLET_RE.match(block_lines[entry_end].strip()))
+            if next_is_bullet and next_indent <= bullet_indent:
+                break
+            if not next_is_bullet and next_indent <= bullet_indent:
+                break
+            entry_end += 1
+        return "\n".join(block_lines[bullet_start:entry_end])
+
+    # 3. Case B: Indented hierarchy under a single header or item name
+    # Line 0 is at indent 0, and ALL other lines (1..N-1) are indented (> 0)
+    if indents[0] == 0 and all(ind > 0 for ind in indents[1:]):
+        min_child_indent = min(indents[1:])
+        child_item_indices = [i for i, ind in enumerate(indents) if ind == min_child_indent]
+
+        child_identity_indices = [i for i in child_item_indices if line_fields[i] in _IDENTITY_FIELDS]
+        child_status_indices = [i for i in child_item_indices if line_fields[i] in _STATUS_FIELDS]
+        known_child_fields = [line_fields[i] for i in child_item_indices if line_fields[i] in _KNOWN_FIELDS]
+        has_repeated_child_fields = len(known_child_fields) > len(set(known_child_fields))
+
+        # Check if child lines at min_child_indent are property fields
+        has_property_fields = any(
+            line_fields[i] in _PROPERTY_FIELDS
+            for i in child_item_indices
+        )
+
+        # Distinguish a plain package item with indented properties from a category header (#295, Codex comment 3966653462).
+        # A plain package item has property child fields (e.g. Status: installed, State: disabled),
+        # but no child identity fields (Name:, Package:, etc.) and no repeated fields.
+        is_plain_item_with_props = (
+            not bool(child_identity_indices)
+            and not has_repeated_child_fields
+            and all(
+                line_fields[i] in _PROPERTY_FIELDS
+                for i in child_item_indices
+            )
+        )
+
+        # Line 0 is a category header if:
+        # - It is not an identity field (e.g. not "Package: portable-resume"), AND
+        # - It is not a plain package item with indented property fields, AND
+        # - Either child lines have no property fields (plain item names or items with sub-indentation),
+        #   or child lines contain child identity labels, multiple identities, or repeated fields.
+        is_category_header = (
+            line_fields[0] not in _IDENTITY_FIELDS
+            and not is_plain_item_with_props
+            and (
+                not has_property_fields
+                or bool(child_identity_indices)
+                or has_repeated_child_fields
+            )
+        )
+        if is_category_header:
+            if rel_idx == 0:
+                return block_lines[0]
+
+            candidates = child_item_indices
+            first_status_cand = next((i for i in candidates if line_fields[i] in _STATUS_FIELDS), None)
+            first_identity_cand = next((i for i in candidates if line_fields[i] in _IDENTITY_FIELDS), None)
+
+            if first_status_cand is not None and (
+                first_identity_cand is None or first_status_cand < first_identity_cand
+            ):
+                # Status-first orientation: each status field starts a new record
+                entry_starts = [i for i in candidates if line_fields[i] in _STATUS_FIELDS]
+                if candidates[0] not in entry_starts:
+                    entry_starts.insert(0, candidates[0])
+            else:
+                # Identity-first or plain-item orientation
+                has_explicit_identity = bool(child_identity_indices)
+                entry_starts = [candidates[0]]
+                seen_in_curr: set[str] = set()
+                if line_fields[candidates[0]] and line_fields[candidates[0]] in _KNOWN_FIELDS:
+                    seen_in_curr.add(line_fields[candidates[0]])
+
+                for i in candidates[1:]:
+                    f = line_fields[i]
+                    if not f or (not has_explicit_identity and f not in _KNOWN_FIELDS):
+                        # Plain item name (or unlabelled entry) at min_child_indent starts a new entry
+                        entry_starts.append(i)
+                        seen_in_curr = set()
+                        continue
+                    is_repeated = f in seen_in_curr
+                    is_identity = f in _IDENTITY_FIELDS
+                    is_identity_after_status = (
+                        is_identity
+                        and bool(seen_in_curr & _STATUS_FIELDS)
+                    )
+                    if is_repeated or is_identity or is_identity_after_status:
+                        entry_starts.append(i)
+                        seen_in_curr = {f} if f in _KNOWN_FIELDS else set()
+                    else:
+                        if f in _KNOWN_FIELDS:
+                            seen_in_curr.add(f)
+
+            e_start = entry_starts[0]
+            for s in entry_starts:
+                if s <= rel_idx:
+                    e_start = s
+                else:
+                    break
+            e_end = len(block_lines)
+            for s in entry_starts:
+                if s > e_start:
+                    e_end = s
+                    break
+            return "\n".join(block_lines[e_start:e_end])
+        else:
+            # Single item at line 0 with indented property lines
+            return "\n".join(block_lines)
+
+    # 4. Case C: Indented items under non-attribute keys (e.g. YAML mapping)
+    indent_0_indices = [i for i, ind in enumerate(indents) if ind == 0]
+    if len(indent_0_indices) >= 2:
+        indent_0_known = [line_fields[i] in _KNOWN_FIELDS for i in indent_0_indices]
+        if not all(indent_0_known) and any(
+            idx_0 + 1 < len(block_lines) and indents[idx_0 + 1] > 0 for idx_0 in indent_0_indices
+        ):
+            e_start = indent_0_indices[0]
+            for idx_0 in indent_0_indices:
+                if idx_0 <= rel_idx:
+                    e_start = idx_0
+                else:
+                    break
+            e_end = len(block_lines)
+            for idx_0 in indent_0_indices:
+                if idx_0 > e_start:
+                    e_end = idx_0
+                    break
+            return "\n".join(block_lines[e_start:e_end])
+
+    # 5. Case D: Key-value fields at base indent
+    known_field_indices = [i for i, f in enumerate(line_fields) if f in _KNOWN_FIELDS]
+    if known_field_indices:
+        first_status_idx = next((i for i, f in enumerate(line_fields) if f in _STATUS_FIELDS), None)
+        first_identity_idx = next((i for i, f in enumerate(line_fields) if f in _IDENTITY_FIELDS), None)
+
+        entry_starts = [0]
+        if first_status_idx is not None and (first_identity_idx is None or first_status_idx < first_identity_idx):
+            # Status-first orientation: each status field starts a new record
+            entry_starts = [i for i, f in enumerate(line_fields) if f in _STATUS_FIELDS]
+            if 0 not in entry_starts:
+                entry_starts.insert(0, 0)
+        else:
+            # Identity-first orientation
+            seen_in_curr: set[str] = set()
+            if line_fields[0] and line_fields[0] in _KNOWN_FIELDS:
+                seen_in_curr.add(line_fields[0])
+
+            for i in range(1, len(block_lines)):
+                f = line_fields[i]
+                if not f or f not in _KNOWN_FIELDS:
+                    continue
+                is_repeated = f in seen_in_curr
+                is_identity_after_status = (
+                    f in _IDENTITY_FIELDS
+                    and bool(seen_in_curr & _STATUS_FIELDS)
+                )
+                if is_repeated or is_identity_after_status:
+                    entry_starts.append(i)
+                    seen_in_curr = {f}
+                else:
+                    seen_in_curr.add(f)
+
+        e_start = 0
+        for s in entry_starts:
+            if s <= rel_idx:
+                e_start = s
+            else:
+                break
+        e_end = len(block_lines)
+        for s in entry_starts:
+            if s > e_start:
+                e_end = s
+                break
+        return "\n".join(block_lines[e_start:e_end])
+
+    # 6. Case E: Plain listing rows (flat table rows, markdown tables)
+    return block_lines[rel_idx]
+
+
+def _count_quote_depth(line: str) -> int:
+    """Count leading markdown blockquote depth (> prefix)."""
+    d = 0
+    for ch in line.strip():
+        if ch == ">":
+            d += 1
+        elif ch in (" ", "\t"):
+            continue
+        else:
             break
-        next_indent = len(next_line) - len(next_line.lstrip())
-        next_is_bullet = bool(re.match(r"^(?:[-*•]|\d+\.)\s+", next_stripped))
+    return d
 
-        # Stop if we hit a new item at the same or lesser indentation, or a new bullet
-        if next_is_bullet:
-            break
-        if not is_bullet and next_indent <= base_indent:
-            break
-        if is_bullet and next_indent <= base_indent:
-            break
 
-        record_lines.append(next_line)
+def _stale_metadata_section(block: str) -> str:
+    """Return the structural stale-metadata section, excluding recovered text."""
 
-    return "\n".join(record_lines)
+    lines = block.splitlines()
+    first_non_empty = next((line for line in lines if line.strip()), "")
+    block_depth = _count_quote_depth(first_non_empty)
+    heading_re = re.compile(r"^##\s+stale\s+session\s+metadata\b", re.IGNORECASE)
+    next_h2_re = re.compile(r"^##\s+\S", re.IGNORECASE)
+    start: int | None = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        depth = _count_quote_depth(stripped)
+        if depth != block_depth:
+            continue
+        text = stripped.lstrip("> ").strip()
+        if start is None:
+            if heading_re.match(text):
+                start = idx
+            continue
+        if next_h2_re.match(text):
+            end = idx
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end])
+
+
+def _untrusted_envelope_header(block: str) -> str:
+    """Return Source/Session lines from a legacy untrusted envelope, not recovered turns."""
+
+    lines = block.splitlines()
+    first_non_empty = next((line for line in lines if line.strip()), "")
+    block_depth = _count_quote_depth(first_non_empty)
+    start_re = re.compile(r"^###\s+untrusted(?:\s+recovered\s+context)?\b", re.IGNORECASE)
+    stop_re = re.compile(
+        r"^(?:###\s+(?:latest\s+explicit\s+user\s+request|latest\s+assistant\s+message|"
+        r"latest\s+recorded\s+action|bounded\s+transcript\s+evidence|turn\s+transcript|"
+        r"user|assistant|tool)\b)",
+        re.IGNORECASE,
+    )
+    start: int | None = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        depth = _count_quote_depth(stripped)
+        if depth != block_depth:
+            continue
+        text = stripped.lstrip("> ").strip()
+        if start is None:
+            if start_re.match(text):
+                start = idx
+            continue
+        if stop_re.match(text):
+            end = idx
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end])
+
+
+def _identity_header_text(block: str) -> str:
+    """Session identity comes from envelope metadata, never recovered user text."""
+
+    metadata = _stale_metadata_section(block)
+    if metadata.strip():
+        return metadata
+    return _untrusted_envelope_header(block)
 
 
 def _extract_markdown_recovered_content(block: str) -> str:
@@ -1073,18 +1532,42 @@ def _extract_markdown_recovered_content(block: str) -> str:
         re.IGNORECASE,
     )
 
+    # Determine structural heading quote depth (#296, Codex comment 3965487929).
+    # In canonical handoffs, document headings appear at base quote depth (typically 0, or 1
+    # if the entire block is quoted by the host), while recovered content lines are quoted deeper.
+    # Quoted content lines that resemble headings (e.g. '> ## Warnings') must not terminate extraction.
+    candidate_depths: list[int] = []
     for line in lines:
         stripped = line.strip()
-        if content_heading_re.match(stripped):
-            in_content_section = True
+        if not stripped:
             continue
-        elif stop_heading_re.match(stripped):
-            in_content_section = False
+        text_after_quotes = stripped.lstrip("> ").strip()
+        if text_after_quotes.startswith("#") and (
+            content_heading_re.match(text_after_quotes)
+            or stop_heading_re.match(text_after_quotes)
+        ):
+            candidate_depths.append(_count_quote_depth(stripped))
+
+    structural_depth = min(candidate_depths) if candidate_depths else 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
             continue
+        depth = _count_quote_depth(stripped)
+        text_after_quotes = stripped.lstrip("> ").strip()
+
+        if depth == structural_depth and text_after_quotes.startswith("#"):
+            if content_heading_re.match(text_after_quotes):
+                in_content_section = True
+                continue
+            else:
+                in_content_section = False
+                continue
 
         if in_content_section:
-            if stripped.startswith(">"):
-                text = stripped.lstrip("> ").strip()
+            if depth > structural_depth:
+                text = text_after_quotes
                 if re.match(r"^\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*$", text, re.IGNORECASE):
                     continue
                 if re.match(r"^`\[W_[A-Z0-9_]+\]`$", text):
@@ -1093,10 +1576,55 @@ def _extract_markdown_recovered_content(block: str) -> str:
                     continue
                 if text:
                     content_lines.append(text)
-            elif stripped and not stripped.startswith("#"):
+            elif not stripped.startswith("#"):
                 content_lines.append(stripped)
 
     return " ".join(content_lines)
+
+
+def _split_handoff_blocks(stdout: str) -> list[str]:
+    """Split stdout into distinct handoff blocks based on structural headings and quote depth (#296).
+
+    Distinguishes structural document headings from quoted untrusted content (e.g. '> ### Untrusted')
+    so that quoted user content resembling delimiters does not prematurely split a handoff block
+    (Codex comment 3966020727).
+    """
+    handoff_start_re = re.compile(
+        r"^(?:#\s+portable\s+resume\s+(?:handoff|no\s+match|candidate\s+selection)\b|"
+        r"###\s+untrusted(?:\s+recovered\s+context)?\b)",
+        re.IGNORECASE,
+    )
+    lines = stdout.splitlines(keepends=True)
+    block_starts: list[int] = []
+    current_block_depth: int | None = None
+    char_offset = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            depth = _count_quote_depth(stripped)
+            text_after_quotes = stripped.lstrip("> ").strip()
+            if handoff_start_re.match(text_after_quotes):
+                if current_block_depth is None or depth <= current_block_depth:
+                    block_starts.append(char_offset)
+                    current_block_depth = depth
+        char_offset += len(line)
+
+    if not block_starts:
+        out_lower = stdout.lower()
+        if (
+            "# portable resume handoff" in out_lower
+            or "security boundary:" in out_lower
+            or "### untrusted" in out_lower
+        ):
+            return [stdout]
+        return []
+
+    blocks: list[str] = []
+    for idx, start in enumerate(block_starts):
+        end = block_starts[idx + 1] if idx + 1 < len(block_starts) else len(stdout)
+        blocks.append(stdout[start:end])
+    return blocks
 
 
 def evaluate_explicit_activation(
@@ -1117,7 +1645,24 @@ def evaluate_explicit_activation(
     3. runner_execution_observed: runner actually executed (observable trace or authentic format)
     4. fixture_read_verified: exact source, session, and fixture content confirmed read
     """
+    stdout = strip_ansi(stdout)
+    stderr = strip_ansi(stderr)
+    err_lower = stderr.lower()
+
+    # Auth diagnostics on stderr are a prerequisite, including nonzero CLI login failures.
+    # Recovered conversation text in stdout is untrusted and is only inspected later
+    # when runner execution is not observed.
     if returncode != 0:
+        if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS):
+            obs = ExplicitActivationObservation(
+                host_responded=False,
+                skill_selected=False,
+                runner_execution_observed=False,
+                fixture_read_verified=False,
+                details="Host blocked on authentication/login credentials",
+                error="auth_required",
+            )
+            return False, obs
         obs = ExplicitActivationObservation(
             host_responded=False,
             skill_selected=False,
@@ -1128,16 +1673,7 @@ def evaluate_explicit_activation(
         )
         return False, obs
 
-    auth_patterns = (
-        r"\b(?:re-?)?authentication required\b",
-        r"\b(?:re-?)?authenticate\b",
-        r"\b(?:not logged in|login required)\b",
-        r"\bplease (?:log ?in|sign in)\b",
-        r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
-        r"\bunauthorized(?:\:|\b)",
-    )
-    err_lower = stderr.lower()
-    if any(re.search(pat, err_lower) for pat in auth_patterns):
+    if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS):
         obs = ExplicitActivationObservation(
             host_responded=False,
             skill_selected=False,
@@ -1275,25 +1811,7 @@ def evaluate_explicit_activation(
 
     # Trace C: Check for authentic untrusted handoff banner and turn headers
     if not fixture_read_verified:
-        # Split into distinct handoff blocks if multiple are present (#296)
-        handoff_delims = list(
-            re.finditer(
-                r"(?im)^[>\s]*(?:#\s+portable\s+resume\s+handoff|###\s+untrusted\b)",
-                stdout,
-            )
-        )
-        handoff_blocks: list[str] = []
-        if handoff_delims:
-            for idx, m in enumerate(handoff_delims):
-                start = m.start()
-                end = handoff_delims[idx + 1].start() if idx + 1 < len(handoff_delims) else len(stdout)
-                handoff_blocks.append(stdout[start:end])
-        elif (
-            "# portable resume handoff" in out_lower
-            or "security boundary:" in out_lower
-            or "### untrusted" in out_lower
-        ):
-            handoff_blocks.append(stdout)
+        handoff_blocks = _split_handoff_blocks(stdout)
 
         for block in handoff_blocks:
             block_lower = block.lower()
@@ -1313,11 +1831,35 @@ def evaluate_explicit_activation(
             if not has_security_boundary:
                 continue
 
-            has_turn_headers = bool(
-                re.search(r">\s*\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*", block_lower)
-                or re.search(r"###\s+(?:user|assistant|tool)\b", block_lower)
-                or re.search(r"\[\d+\s+(?:user|assistant|tool)\]", block_lower)
+            # Check that turn headers or structural section headings appear at the block's structural depth
+            # rather than inside nested quoted content (#296, Codex comments 3965487929, 3966020727).
+            first_non_empty = next((l for l in block.splitlines() if l.strip()), "")
+            block_depth = _count_quote_depth(first_non_empty)
+
+            content_heading_re = re.compile(
+                r"^(?:###\s+(?:latest\s+explicit\s+user\s+request|latest\s+assistant\s+message|"
+                r"latest\s+recorded\s+action|bounded\s+transcript\s+evidence|turn\s+transcript|"
+                r"user|assistant|tool)\b)",
+                re.IGNORECASE,
             )
+            turn_marker_re = re.compile(
+                r"^(?:\*\*\[\d+\s+(?:user|assistant|tool)[^\]]*\]\*\*|\[\d+\s+(?:user|assistant|tool)\])",
+                re.IGNORECASE,
+            )
+            has_turn_headers = False
+            for b_line in block.splitlines():
+                b_stripped = b_line.strip()
+                if not b_stripped:
+                    continue
+                b_depth = _count_quote_depth(b_stripped)
+                b_text = b_stripped.lstrip("> ").strip()
+                if b_depth == block_depth and content_heading_re.match(b_text):
+                    has_turn_headers = True
+                    break
+                if (b_depth == block_depth + 1 or b_depth == block_depth) and turn_marker_re.match(b_text):
+                    has_turn_headers = True
+                    break
+
             if not has_turn_headers:
                 continue
 
@@ -1326,12 +1868,23 @@ def evaluate_explicit_activation(
 
             extracted_source: str | None = None
             extracted_session: str | None = None
-            src_match = re.search(r"(?i)(?:>\s*-\s*)?source\s*:\s*[`'\"]?([a-zA-Z0-9_-]+)[`'\"]?", block)
+            metadata = _identity_header_text(block)
+            src_match = re.search(
+                r"""(?i)(?:>\s*-\s*)?source\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([a-zA-Z0-9_-]+))""",
+                metadata,
+            )
             if src_match:
-                extracted_source = src_match.group(1).strip("` ")
-            sess_match = re.search(r"(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*[`'\"]?([a-f0-9-]{36})[`'\"]?", block)
+                extracted_source = (
+                    src_match.group(1) or src_match.group(2) or src_match.group(3) or src_match.group(4)
+                ).strip()
+            sess_match = re.search(
+                r"""(?i)(?:>\s*-\s*)?session(?:\s*id)?\s*:\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([^\s\r\n`'"]+))""",
+                metadata,
+            )
             if sess_match:
-                extracted_session = sess_match.group(1).strip("` ")
+                extracted_session = (
+                    sess_match.group(1) or sess_match.group(2) or sess_match.group(3) or sess_match.group(4)
+                ).strip()
 
             recovered_text = _extract_markdown_recovered_content(block)
 
@@ -1355,17 +1908,9 @@ def evaluate_explicit_activation(
     # When runner execution was not observed, evaluate diagnostic prerequisites or refusals (#296)
     if not runner_execution_observed:
         # Check for authentication diagnostics on stderr or stdout
-        auth_patterns = (
-            r"\b(?:re-?)?authentication required\b",
-            r"\b(?:re-?)?authenticate\b",
-            r"\b(?:not logged in|login required)\b",
-            r"\bplease (?:log ?in|sign in)\b",
-            r"\bapi[ _-]?key (?:missing|not found|invalid|required)\b",
-            r"\bunauthorized(?:\:|\b)",
-        )
         err_lower = stderr.lower()
-        if any(re.search(pat, err_lower) for pat in auth_patterns) or any(
-            re.search(pat, out_lower) for pat in auth_patterns
+        if any(re.search(pat, err_lower) for pat in _AUTH_BLOCKED_PATTERNS) or any(
+            re.search(pat, out_lower) for pat in _AUTH_BLOCKED_PATTERNS
         ):
             obs = ExplicitActivationObservation(
                 host_responded=False,
@@ -1603,24 +2148,6 @@ def collect_local_discovery_evidence(
                 reason=sanitize_evidence_text(f"Blocked prerequisite: discovery command execution failed: {exc}"),
             )
 
-        combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
-        # Check for authentication or prerequisite blocks
-        auth_tokens = ("auth", "login", "api key", "unauthorized", "sign in", "token", "permission")
-        if any(tok in combined_err for tok in auth_tokens):
-            return NativeEvidenceRecord(
-                host=host,
-                scope=SCOPE_LOCAL_DISCOVERY,
-                state=STATE_NOT_RUN,
-                artifact_file=artifact_name,
-                artifact_sha256=artifact_sha,
-                identity_sha256=identity_hash,
-                recorded_at=current_iso_timestamp(),
-                host_version=host_ver,
-                operator=operator,
-                ci_run_url=ci_run_url,
-                reason="Blocked prerequisite: authentication or credentials required for host discovery",
-            )
-
         unsupported_tokens = (
             "unknown command",
             "unrecognized command",
@@ -1628,6 +2155,7 @@ def collect_local_discovery_evidence(
             "flag provided but not defined",
             "is not a kimi command",
         )
+        combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
         if any(tok in combined_err for tok in unsupported_tokens):
             return NativeEvidenceRecord(
                 host=host,
@@ -1643,6 +2171,21 @@ def collect_local_discovery_evidence(
                 reason=sanitize_evidence_text(
                     f"Blocked prerequisite: command not supported by host binary version: {proc.stderr.strip() or proc.stdout.strip()[:100]}"
                 ),
+            )
+
+        if _auth_blocked_text(proc.stderr, proc.stdout):
+            return NativeEvidenceRecord(
+                host=host,
+                scope=SCOPE_LOCAL_DISCOVERY,
+                state=STATE_NOT_RUN,
+                artifact_file=artifact_name,
+                artifact_sha256=artifact_sha,
+                identity_sha256=identity_hash,
+                recorded_at=current_iso_timestamp(),
+                host_version=host_ver,
+                operator=operator,
+                ci_run_url=ci_run_url,
+                reason="Blocked prerequisite: authentication or credentials required for host discovery",
             )
 
         if proc.returncode != 0:
@@ -1670,6 +2213,21 @@ def collect_local_discovery_evidence(
             host=host,
         )
         if not passed:
+            diag_text = f"{proc.stderr}\n{proc.stdout}".lower()
+            if any(re.search(pat, diag_text) for pat in _AUTH_BLOCKED_PATTERNS):
+                return NativeEvidenceRecord(
+                    host=host,
+                    scope=SCOPE_LOCAL_DISCOVERY,
+                    state=STATE_NOT_RUN,
+                    artifact_file=artifact_name,
+                    artifact_sha256=artifact_sha,
+                    identity_sha256=identity_hash,
+                    recorded_at=current_iso_timestamp(),
+                    host_version=host_ver,
+                    operator=operator,
+                    ci_run_url=ci_run_url,
+                    reason="Blocked prerequisite: authentication or credentials required for host discovery",
+                )
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_LOCAL_DISCOVERY,
@@ -1984,22 +2542,6 @@ def collect_explicit_activation_evidence(
             )
 
         combined = f"{proc.stdout}\n{proc.stderr}".lower()
-        auth_tokens = ("auth", "login", "api key", "unauthorized", "sign in", "token", "permission")
-        if any(tok in combined for tok in auth_tokens):
-            return NativeEvidenceRecord(
-                host=host,
-                scope=SCOPE_EXPLICIT_ACTIVATION,
-                state=STATE_NOT_RUN,
-                artifact_file=artifact_name,
-                artifact_sha256=artifact_sha,
-                identity_sha256=identity_hash,
-                recorded_at=current_iso_timestamp(),
-                host_version=host_ver,
-                operator=operator,
-                ci_run_url=ci_run_url,
-                reason="Blocked prerequisite: authentication or credentials required for host activation",
-            )
-
         unsupported_tokens = (
             "unknown command",
             "unrecognized command",
@@ -2035,6 +2577,25 @@ def collect_explicit_activation_evidence(
         )
 
         if not passed:
+            if obs.error == "auth_required":
+                return NativeEvidenceRecord(
+                    host=host,
+                    scope=SCOPE_EXPLICIT_ACTIVATION,
+                    state=STATE_NOT_RUN,
+                    artifact_file=artifact_name,
+                    artifact_sha256=artifact_sha,
+                    identity_sha256=identity_hash,
+                    recorded_at=current_iso_timestamp(),
+                    host_version=host_ver,
+                    operator=operator,
+                    ci_run_url=ci_run_url,
+                    reason="Blocked prerequisite: authentication or credentials required for host activation",
+                    provenance={
+                        "command": [sanitize_evidence_text(c) for c in cmd],
+                        "error": obs.error,
+                        "details": obs.details,
+                    },
+                )
             return NativeEvidenceRecord(
                 host=host,
                 scope=SCOPE_EXPLICIT_ACTIVATION,
