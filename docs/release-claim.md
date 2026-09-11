@@ -122,14 +122,20 @@ separate and require their own rows in
 
 ### Current state
 
+- `v0.4.5`: **published** from annotated tag at commit
+  `baf5a39e1c0632015a35d54a5d8b2a0f6e3692b5`.
+  [Release run 34563159112](https://github.com/ImL1s/resume-skills/actions/runs/34563159112)
+  and evidence in [`evidence-summary.md`](evidence-summary.md) (handoff
+  rejected-approach recovery #299/#303, native-evidence hardening #298,
+  Antigravity tree-URL install docs #302). Current `main` advances to
+  `0.4.6.dev0` after this tag.
 - `v0.4.4`: **published** from annotated tag at commit
   `8ce698fa22b105504a8fc86e2477d7d2cc0b85b6`.
   [Release run 34364157738](https://github.com/ImL1s/resume-skills/actions/runs/34364157738)
   and evidence in [`evidence-summary.md`](evidence-summary.md) (vendor-curated
   directory submission preparation: Codex `interface` block, Grok
   `.grok-plugin/plugin.json`, plugin-root `codex-plugin` bundle, brand assets,
-  public site). Current `main` carries the untagged `0.4.5` release
-  candidate after this tag; `v0.4.5` is not published yet.
+  public site).
 - `v0.4.3`: **published** from annotated tag at commit
   `4e73b44a02b7643e12545653a8c1953d05d4c7ae`.
   [Release run 31820997135](https://github.com/ImL1s/resume-skills/actions/runs/31820997135)
@@ -163,8 +169,9 @@ separate and require their own rows in
   [`STATUS.md`](STATUS.md) and is not retroactively claimed as a successful
   callback.
 - Published outputs (latest):
-  [GitHub Release v0.4.4](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4)
-  and [PyPI 0.4.4](https://pypi.org/project/portable-resume/0.4.4/); prior
+  [GitHub Release v0.4.5](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.5)
+  and [PyPI 0.4.5](https://pypi.org/project/portable-resume/0.4.5/); prior
+  [v0.4.4](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4),
   [v0.4.3](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.3),
   [v0.4.2](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.2),
   [v0.4.1](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.1),

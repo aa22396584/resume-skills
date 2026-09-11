@@ -2,7 +2,7 @@
 
 Choose a localized quick-start below. English technical specifications in `docs/` remain the canonical source for security, source formats, evidence, and release claims; every localized guide links back to those files.
 
-Current published release: [`0.4.3`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.4).
+Current published release: [`0.4.5`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.5).
 Public host marketplace:
 [`ImL1s/portable-resume-marketplace`](https://github.com/ImL1s/portable-resume-marketplace).
 Recorded host-level install and picker evidence is v0.3.2-era; fresh through
