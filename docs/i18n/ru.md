@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 Активируйте `resume-<source>` по правилам целевого host и заново проверьте текущий repository перед выполнением handoff.
 
-Проверка host успешно выполнила 8/8 вызовов CLI и 7/7 точных локальных установок нативных пакетов. Установка из публичного marketplace прошла на 6/6 совместимых host; marketplace picker Cursor и Kimi также проверены. Остальные визуальные Skill picker и курируемые поставщиками каталоги не заявлены как завершённые.
+Проверка host успешно выполнила 8/8 вызовов CLI и 7/7 точных локальных установок нативных пакетов. Установка из публичного marketplace прошла на 6/6 совместимых host; marketplace picker Cursor и Kimi также проверены. Остальные визуальные Skill picker не заявлены как завершённые. OpenAI Plugins Directory опубликован как 0.4.5; xAI, Claude Code и GravityHub не опубликованы.
 
 Эти результаты на уровне host относятся к свидетельствам v0.3.2. Повторная установка через 0.4.1 на каждом host и picker-потоки остаются **not-run**.
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

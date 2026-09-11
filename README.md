@@ -14,7 +14,10 @@ Clean-room-oriented Agent Skills for migrating bounded local coding-agent contex
 
 **Current release:** [`0.4.5`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.5)
 · [PyPI](https://pypi.org/project/portable-resume/0.4.5/) · **306/306** packaging and
-Ubuntu installed-runner cells (17 sources × 18 destinations). Windows native
+Ubuntu installed-runner cells (17 sources × 18 destinations). OpenAI Plugins
+Directory listed at 0.4.5
+([public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95));
+xAI, Claude Code, and GravityHub remain not listed. Windows native
 mutating install is **supported** (#125); Windows hard gate is focused product-install
 smoke (3 hosts), **not** full 306/306 on Windows. Published `v0.4.4` / `v0.4.3` / `v0.4.2` /
 `v0.4.1` / `v0.4.0` remain historical; published `v0.3.4` remains historical 81.
@@ -272,7 +275,7 @@ compatible hosts, including Cursor and Kimi picker flows, is recorded for
 v0.3.2; fresh through 0.4.1 host-by-host reinstall remains **not-run**. Other
 visual Skill pickers are not claimed. Vendor-curated directory listings
 (OpenAI Plugins Directory, Claude Code community marketplace, xAI Grok Build
-marketplace): the OpenAI Plugins Directory listing was published on 2026-09-09
+marketplace): the OpenAI Plugins Directory listing is **0.4.5** as of 2026-09-11
 ([public page](https://chatgpt.com/plugins/plugins_6aa170bf904c8191b53ab41832adbf95)),
 the xAI catalog PR is awaiting review, and the Claude Code submission is pending
 review; the listing status is tracked in [`docs/STATUS.md`](docs/STATUS.md).

@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 Activez `resume-<source>` selon la syntaxe du host et revérifiez le repository actuel avant d’appliquer le handoff.
 
-Le smoke test a réussi 8/8 invocations de CLI et 7/7 installations locales de paquets natifs exacts. L’installation depuis le marketplace public a réussi sur 6/6 hosts compatibles ; les sélecteurs marketplace de Cursor et Kimi ont aussi réussi. Les autres sélecteurs visuels de Skill et les répertoires sélectionnés par les fournisseurs ne sont pas déclarés terminés.
+Le smoke test a réussi 8/8 invocations de CLI et 7/7 installations locales de paquets natifs exacts. L’installation depuis le marketplace public a réussi sur 6/6 hosts compatibles ; les sélecteurs marketplace de Cursor et Kimi ont aussi réussi. Les autres sélecteurs visuels de Skill ne sont pas déclarés terminés. Le OpenAI Plugins Directory est listé en 0.4.5 ; xAI, Claude Code et GravityHub ne sont pas listés.
 
 Ces résultats par host sont des preuves datant de la v0.3.2. La réinstallation host par host et les parcours de sélection de la 0.4.1 restent **not-run**.
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->

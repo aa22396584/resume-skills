@@ -64,7 +64,8 @@ Activate `resume-<source>` using the destination host’s documented grammar. Re
 Current host smoke passed 8/8 CLI invocations and 7/7 exact local native
 package installs. Public marketplace installation passed 6/6 compatible
 hosts; Cursor and Kimi marketplace pickers also passed. Other visual Skill
-pickers and vendor-curated directories remain unclaimed.
+pickers remain unclaimed. The OpenAI Plugins Directory is listed at 0.4.5;
+xAI, Claude Code, and GravityHub remain not listed.
 
 These host-level results are v0.3.2-era evidence. Fresh through 0.4.1 host-by-host
 reinstall and picker flows remain **not-run**.

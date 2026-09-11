@@ -357,5 +357,6 @@ supported native plugin/extension surfaces, including Cursor. Host-native
 headless Skill invocation and public marketplace picker flows for fresh
 OpenClaw/Pi native UI remain **not-run**. Versions, commands, and archive
 digests are recorded in [`host-ui-smoke.md`](host-ui-smoke.md). Other visual
-Skill pickers and vendor-curated directory listings remain separate unclaimed
-gates.
+Skill pickers remain separate unclaimed gates. The OpenAI Plugins Directory is
+listed at 0.4.5; xAI, Claude Code, and GravityHub remain not listed (tracker in
+[`STATUS.md`](STATUS.md)).

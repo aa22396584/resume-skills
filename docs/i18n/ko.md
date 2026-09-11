@@ -60,7 +60,7 @@ PYTHONPATH=src python3 scripts/smoke_installed_matrix.py
 
 대상 host 문법으로 `resume-<source>`를 활성화하고 handoff를 실행하기 전에 현재 repository 상태를 다시 확인하세요.
 
-현재 host 스모크는 8/8 CLI 호출과 정확한 로컬 네이티브 패키지 7/7 설치를 통과했습니다. 공개 marketplace 설치는 호환되는 6/6 host에서 통과했고 Cursor와 Kimi marketplace picker도 통과했습니다. 다른 시각적 Skill picker와 공급업체 선정 디렉터리는 완료로 주장하지 않습니다.
+현재 host 스모크는 8/8 CLI 호출과 정확한 로컬 네이티브 패키지 7/7 설치를 통과했습니다. 공개 marketplace 설치는 호환되는 6/6 host에서 통과했고 Cursor와 Kimi marketplace picker도 통과했습니다. 다른 시각적 Skill picker는 완료로 주장하지 않습니다. OpenAI Plugins Directory는 **0.4.5**로 등재되어 있으며, xAI, Claude Code, GravityHub는 아직 등재되지 않았습니다.
 
 이 host 수준 결과는 v0.3.2 시점의 증거입니다. 0.4.1까지 host별 재설치 및 picker 흐름은 아직 **not-run**입니다.
 <!-- portable-resume-evidence-scope: v0.3.2-hosts v0.4.1-host-reinstall-not-run -->
