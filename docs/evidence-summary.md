@@ -1,5 +1,18 @@
 # Evidence summary
 
+## v0.4.5 (2026-09-11)
+
+- Tag: `v0.4.5` → commit `baf5a39e1c0632015a35d54a5d8b2a0f6e3692b5`
+- Release workflow: [Actions run 34563159112](https://github.com/ImL1s/resume-skills/actions/runs/34563159112) (success, 14 jobs incl. PyPI Trusted Publishing; Ubuntu+macOS × Python 3.11/3.14)
+- GitHub Release: https://github.com/ImL1s/resume-skills/releases/tag/v0.4.5
+- PyPI: https://pypi.org/project/portable-resume/0.4.5/
+- Highlights: recovered rejected-approaches handoff section (#299/#303); native-evidence auth/session/JSON fail-closed hardening (#298); Antigravity CLI tree-URL install docs (#302)
+- Windows installed-runner: focused product-install smoke only (not full 306/306 on Windows)
+- Host UI / marketplace reinstall on this tip: **not-run**
+- Marketplace mirror: synced at [`portable-resume-marketplace@d1f613c`](https://github.com/ImL1s/portable-resume-marketplace/commit/d1f613ca4499dd7514c04ce07dc106218bf1d670) (sync run 34564121882)
+- Vendor directories (2026-09-11): OpenAI Plugins Directory still listed at 0.4.4 (plugin `plugins_6aa170bf904c8191b53ab41832adbf95`); 0.4.5 `codex-plugin.zip` is on the GitHub Release but the directory version bump needs the authenticated portal. xAI [plugin-marketplace PR #643](https://github.com/xai-org/plugin-marketplace/pull/643) remains open/conflicting (0.4.4 pin). Claude Code form still pending Anthropic review. GravityHub still not listed (directory-side GitHub API 401)
+- Build identity: `source_sha256=efd79e9241a8a87a14f4f958de920c50dcb780a2f2e5f8a43be7b2aabb3ed5c0` `registry_sha256=1d5a42428cec7be41fed18e337a328530ae5f667a32097e55312bc630b08e3c0` `build_identity_sha256=55b443ac813619938805c198d9513cac7c7f33cd602d97499d10147574f1bb4f`
+
 ## v0.4.4 (2026-09-09)
 
 - Tag: `v0.4.4` → commit `8ce698fa22b105504a8fc86e2477d7d2cc0b85b6`
