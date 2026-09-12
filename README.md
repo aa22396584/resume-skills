@@ -1,5 +1,10 @@
 # portable-resume-skills
 
+> **Development home:** https://github.com/ImL1s/resume-skills  
+> Please open issues and pull requests there.  
+> **Mirrors:** [Codeberg](https://codeberg.org/ImL1s/resume-skills) · [GitLab](https://gitlab.com/aa22396584/resume-skills)
+
+
 <p align="center">
   <img src="docs/assets/portable-resume-skills-hero-v2.jpg" alt="Local coding-agent session stores flow into a sealed context archive, then into fresh destination sessions" width="920" />
 </p>
