@@ -8,6 +8,8 @@ https://github.com/aa22396584/resume-skills
 [Codeberg](https://codeberg.org/ImL1s/resume-skills)
 
 
+> **Why this GitHub home?** Public development moved here from [`ImL1s/resume-skills`](https://github.com/ImL1s/resume-skills) because that GitHub account is currently restricted (anonymous visitors get 404 on the profile and many assets). This is the same project. Please open Issues and Pull Requests here.
+
 <p align="center">
   <img src="docs/assets/portable-resume-skills-hero-v2.jpg" alt="Local coding-agent session stores flow into a sealed context archive, then into fresh destination sessions" width="920" />
 </p>
