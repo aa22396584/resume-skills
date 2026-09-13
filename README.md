@@ -1,8 +1,11 @@
 # portable-resume-skills
 
-> **Development home:** https://github.com/ImL1s/resume-skills  
-> Please open issues and pull requests there.  
-> **Mirrors:** [Codeberg](https://codeberg.org/ImL1s/resume-skills) · [GitLab](https://gitlab.com/aa22396584/resume-skills)
+**Development, Issues & Pull Requests:**  
+https://github.com/aa22396584/resume-skills
+
+**Mirrors:**  
+[GitLab](https://gitlab.com/aa22396584/resume-skills) ·
+[Codeberg](https://codeberg.org/ImL1s/resume-skills)
 
 
 <p align="center">
@@ -17,7 +20,7 @@
 
 Clean-room-oriented Agent Skills for migrating bounded local coding-agent context into a **fresh** session. Readers never invoke the source agent CLI and never add a network path; recovered text is marked untrusted and stale.
 
-**Current release:** [`0.4.5`](https://github.com/ImL1s/resume-skills/releases/tag/v0.4.5)
+**Current release:** [`0.4.5`](https://github.com/aa22396584/resume-skills/releases/tag/v0.4.5)
 · [PyPI](https://pypi.org/project/portable-resume/0.4.5/) · **306/306** packaging and
 Ubuntu installed-runner cells (17 sources × 18 destinations). OpenAI Plugins
 Directory listed at 0.4.5
@@ -36,7 +39,7 @@ compatible public marketplace installs, and Cursor/Kimi pickers. Fresh through
 **Current `main` development version:** `0.4.6.dev0`. Explicit build/release
 reports add `+g<commit>[.dirty]` while package metadata keeps the PEP 440 base.
 Artifact builds pin one canonical identity before producing bytes. Repository-level
-immutable `v*` tag enforcement remains active ([ruleset `20148806`](https://github.com/ImL1s/resume-skills/rules/20148806)).
+immutable `v*` tag enforcement remains active ([ruleset `20148806`](https://github.com/aa22396584/resume-skills/rules/20148806)).
 
 ## Sources and destinations
 
@@ -248,7 +251,7 @@ next `.dev0` line.
 Published release `v0.3.4` also verifies the GitHub Release layout itself:
 every `SHA256SUMS` entry is a flat asset basename, and both Ubuntu and macOS
 validate a simulated flat download before publication. The immutable v0.3.4
-[release run](https://github.com/ImL1s/resume-skills/actions/runs/30269713516),
+[release run](https://github.com/aa22396584/resume-skills/actions/runs/30269713516),
 commit, public checksum/attestation checks, GitHub Release, PyPI, and marketplace
 evidence are archived in [`docs/evidence-summary.md`](docs/evidence-summary.md).
 
