@@ -359,18 +359,6 @@ PACKAGE_SURFACES["codex-plugin"] = PackageSurface(
 )
 
 
-def source_keys() -> frozenset[str]:
-    return frozenset(SOURCE_PROFILES)
-
-
-def destination_keys() -> frozenset[str]:
-    return frozenset(DESTINATION_PROFILES)
-
-
-def package_keys() -> frozenset[str]:
-    return frozenset(PACKAGE_SURFACES)
-
-
 def enabled_source_keys() -> frozenset[str]:
     return frozenset(k for k, p in SOURCE_PROFILES.items() if p.status == "supported")
 

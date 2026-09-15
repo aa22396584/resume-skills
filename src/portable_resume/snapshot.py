@@ -1935,13 +1935,3 @@ def query_only_live_sqlite(
         if connection is not None:
             connection.close()
         os.close(descriptor)
-
-
-def sha256_file(path: str | os.PathLike[str]) -> str:
-    """Test/audit helper; it never participates in source discovery."""
-
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for block in iter(lambda: handle.read(64 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()

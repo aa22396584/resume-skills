@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 from .bounds import DEFAULT_BOUNDS
 from .diagnostics import DiagnosticError, ERROR_EXIT_CODES, SOURCE_KEYS, WARNING_CODES
@@ -188,21 +188,6 @@ def validate_candidate(value: object) -> None:
     _invariant(candidate["inert"] is True and candidate["untrusted_content"] is True)
 
 
-def validate_request(value: object, *, expected_source: str | None = None) -> None:
-    request = _closed(value, REQUEST_KEYS)
-    _invariant(request["schema_version"] == "portable-resume/request-v1")
-    _invariant(request["source"] in SOURCE_KEYS)
-    if expected_source is not None:
-        _invariant(request["source"] == expected_source)
-    _invariant(request["action"] == "show")
-    _invariant(
-        isinstance(request["resume_ref"], str)
-        and 0 < len(request["resume_ref"]) <= DEFAULT_BOUNDS.ref_chars
-        and _safe_inline(request["resume_ref"])
-    )
-    _invariant(isinstance(request["cwd"], str) and _safe_inline(request["cwd"]))
-
-
 def validate_diagnostic(value: object) -> None:
     diagnostic = _closed(value, DIAGNOSTIC_KEYS)
     _invariant(diagnostic["schema_version"] == "portable-resume/diagnostic-v1")
@@ -242,10 +227,3 @@ def _candidate_sort_key(candidate: Mapping[str, Any]) -> tuple[bool, int, str, s
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         micros = int(parsed.timestamp() * 1_000_000)
     return (value is None, -micros, str(candidate["source"]), str(candidate["session_id"]))
-
-
-def assert_exact_keys(value: Mapping[str, Any], expected: Iterable[str]) -> None:
-    """Small public helper used by strict request/diagnostic decoders."""
-
-    if set(value) != set(expected):
-        raise DiagnosticError.invalid()

@@ -1,24 +1,10 @@
-"""Shared adapter helpers (strict JSON, age windows, UUID refs)."""
+"""Shared adapter helpers (age windows, UUID refs)."""
 
 from __future__ import annotations
 
 import time
 import uuid
 from datetime import datetime
-from typing import Any
-
-
-class DuplicateKey(ValueError):
-    """Raised when a JSON object repeats a key (strict parse)."""
-
-
-def object_pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    output: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in output:
-            raise DuplicateKey(key)
-        output[key] = value
-    return output
 
 
 def exact_uuid_ref(value: str | None) -> str | None:
