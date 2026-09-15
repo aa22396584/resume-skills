@@ -13,7 +13,6 @@ from portable_resume.registry import (
     PackageSurface,
     SourceProfile,
     _validate_maps,
-    destination_keys,
     enabled_destination_keys,
     enabled_package_keys,
     enabled_source_keys,
